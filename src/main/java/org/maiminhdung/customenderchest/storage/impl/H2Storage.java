@@ -13,17 +13,20 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 
 public class H2Storage implements StorageInterface {
 
     private final StorageManager storageManager;
     private final String tableName;
+    private final ExecutorService ioExecutor;
 
     // Regex pattern for valid SQL table names (alphanumeric and underscores only)
     private static final java.util.regex.Pattern VALID_TABLE_NAME = java.util.regex.Pattern.compile("^[a-zA-Z0-9_]+$");
 
     public H2Storage(StorageManager storageManager) {
         this.storageManager = storageManager;
+        this.ioExecutor = storageManager.getIoExecutor();
         String configTableName = EnderChest.getInstance().config().getString("storage.table_name", "custom_enderchests");
         
         // Validate table name to prevent SQL injection
@@ -129,7 +132,7 @@ public class H2Storage implements StorageInterface {
                 throw new java.util.concurrent.CompletionException(e);
             }
             return null;
-        });
+        }, ioExecutor);
     }
 
     /**
@@ -146,7 +149,7 @@ public class H2Storage implements StorageInterface {
             } catch (Exception e) {
                 EnderChest.getInstance().getLogger().warning("Failed to auto-save migrated data: " + e.getMessage());
             }
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -168,7 +171,7 @@ public class H2Storage implements StorageInterface {
                 throw new java.util.concurrent.CompletionException(e);
             }
             return 0;
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -194,7 +197,7 @@ public class H2Storage implements StorageInterface {
                 ERROR_TRACKER.trackError(e);
                 throw new RuntimeException("Failed to save enderchest data", e);
             }
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -208,7 +211,7 @@ public class H2Storage implements StorageInterface {
             } catch (Exception e) {
                 e.printStackTrace();
             }
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -228,7 +231,7 @@ public class H2Storage implements StorageInterface {
                 e.printStackTrace();
             }
             return null;
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -250,7 +253,7 @@ public class H2Storage implements StorageInterface {
                         "[H2Storage] Failed to find UUID by name for " + playerName + ": " + e.getMessage());
             }
             return null;
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -271,7 +274,7 @@ public class H2Storage implements StorageInterface {
                 ERROR_TRACKER.trackError(e);
                 throw new RuntimeException("Failed to save overflow items", e);
             }
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -298,7 +301,7 @@ public class H2Storage implements StorageInterface {
                 throw new java.util.concurrent.CompletionException(e);
             }
             return null;
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -313,7 +316,7 @@ public class H2Storage implements StorageInterface {
             } catch (Exception e) {
                 e.printStackTrace();
             }
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -333,7 +336,7 @@ public class H2Storage implements StorageInterface {
                 e.printStackTrace();
             }
             return false;
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -352,7 +355,7 @@ public class H2Storage implements StorageInterface {
                         "[H2Storage] Failed to check data existence for " + playerUUID + ": " + e.getMessage());
             }
             return false;
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -458,7 +461,7 @@ public class H2Storage implements StorageInterface {
 
             return new StorageStats(totalPlayers, playersWithItems, totalItems,
                     totalOverflowPlayers, totalOverflowItems, totalDataSize);
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -521,6 +524,6 @@ public class H2Storage implements StorageInterface {
             }
 
             return result;
-        });
+        }, ioExecutor);
     }
 }

@@ -28,21 +28,19 @@ import java.util.stream.Collectors;
 
 /**
  * Main command handler for CustomEnderChest plugin
- * Handles all /cec subcommands including open, reload, delete, convertall, stats, etc.
+ * Handles all /cec subcommands including open, reload, delete, stats, etc.
  */
 public final class EnderChestCommand implements CommandExecutor, TabCompleter {
 
     private final EnderChest plugin;
     private final StorageInterface storage;
     private final EnderChestManager manager;
-    private final ConvertAllCommand convertAllCommand;
     private final MigrationManager migrationManager;
 
     public EnderChestCommand(EnderChest plugin) {
         this.plugin = plugin;
         this.storage = plugin.getStorageManager().getStorage();
         this.manager = plugin.getEnderChestManager();
-        this.convertAllCommand = new ConvertAllCommand(plugin);
         this.migrationManager = new MigrationManager(plugin);
     }
 
@@ -59,7 +57,6 @@ public final class EnderChestCommand implements CommandExecutor, TabCompleter {
                 (args[0].equalsIgnoreCase("reload") ||
                  args[0].equalsIgnoreCase("import") ||
                  args[0].equalsIgnoreCase("delete") ||
-                 args[0].equalsIgnoreCase("convertall") ||
                  args[0].equalsIgnoreCase("migrate") ||
                  args[0].equalsIgnoreCase("stats"));
 
@@ -88,9 +85,6 @@ public final class EnderChestCommand implements CommandExecutor, TabCompleter {
                 break;
             case "delete":
                 handleDelete(sender, args, label);
-                break;
-            case "convertall":
-                convertAllCommand.onCommand(sender, command, label, args);
                 break;
             case "stats":
                 handleStats(sender, args);
@@ -472,7 +466,6 @@ public final class EnderChestCommand implements CommandExecutor, TabCompleter {
                 completions.add("reload");
                 completions.add("import");
                 completions.add("delete");
-                completions.add("convertall");
                 completions.add("migrate");
                 completions.add("stats");
                 completions.add("open");

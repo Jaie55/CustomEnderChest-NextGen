@@ -5,6 +5,7 @@ import static org.maiminhdung.customenderchest.EnderChest.ERROR_TRACKER;
 import org.maiminhdung.customenderchest.EnderChest;
 import org.maiminhdung.customenderchest.data.ItemSerializer;
 import org.maiminhdung.customenderchest.storage.StorageInterface;
+import org.maiminhdung.customenderchest.storage.StorageManager;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.inventory.ItemStack;
 
@@ -13,12 +14,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 
 public class YmlStorage implements StorageInterface {
 
     private final File dataFolder;
+    private final ExecutorService ioExecutor;
 
-    public YmlStorage(EnderChest plugin) {
+    public YmlStorage(StorageManager storageManager) {
+        EnderChest plugin = storageManager.getPlugin();
+        this.ioExecutor = storageManager.getIoExecutor();
         this.dataFolder = new File(plugin.getDataFolder(), "playerdata");
         if (!dataFolder.exists()) {
             dataFolder.mkdirs();
@@ -49,7 +54,7 @@ public class YmlStorage implements StorageInterface {
             List<Map<String, Object>> serializedItems = (List<Map<String, Object>>) config.getList("enderchest-inventory");
 
             return ItemSerializer.deserialize(serializedItems);
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -66,10 +71,8 @@ public class YmlStorage implements StorageInterface {
                 e.printStackTrace();
                 ERROR_TRACKER.trackError(e);
             }
-        });
+        }, ioExecutor);
     }
-
-    // --- Another method ---
 
     @Override
     public void init() {
@@ -88,7 +91,7 @@ public class YmlStorage implements StorageInterface {
                 throw new java.util.concurrent.CompletionException(e);
             }
             return config.getInt("enderchest-size", 0);
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -98,7 +101,7 @@ public class YmlStorage implements StorageInterface {
             if (playerFile.exists()) {
                 playerFile.delete();
             }
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -107,7 +110,7 @@ public class YmlStorage implements StorageInterface {
             File playerFile = getPlayerFile(playerUUID);
             if (!playerFile.exists()) return null;
             return YamlConfiguration.loadConfiguration(playerFile).getString("player-name");
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -141,7 +144,7 @@ public class YmlStorage implements StorageInterface {
                 return UUID.fromString(uuidStr);
             }
             return null;
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -158,7 +161,7 @@ public class YmlStorage implements StorageInterface {
                 e.printStackTrace();
                 ERROR_TRACKER.trackError(e);
             }
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -179,7 +182,7 @@ public class YmlStorage implements StorageInterface {
 
             if (serializedItems == null) return null;
             return ItemSerializer.deserialize(serializedItems);
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -197,7 +200,7 @@ public class YmlStorage implements StorageInterface {
                 e.printStackTrace();
                 ERROR_TRACKER.trackError(e);
             }
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -208,7 +211,7 @@ public class YmlStorage implements StorageInterface {
 
             YamlConfiguration config = YamlConfiguration.loadConfiguration(playerFile);
             return config.contains("overflow-items");
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -216,7 +219,7 @@ public class YmlStorage implements StorageInterface {
         return CompletableFuture.supplyAsync(() -> {
             File playerFile = getPlayerFile(playerUUID);
             return playerFile.exists();
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -255,7 +258,7 @@ public class YmlStorage implements StorageInterface {
                                 }
                             }
                             if (hasAnyItem) {
-                                playersWithItems++;
+                                    playersWithItems++;
                             }
                         }
                     }
@@ -282,7 +285,7 @@ public class YmlStorage implements StorageInterface {
 
             return new StorageStats(totalPlayers, playersWithItems, totalItems,
                     totalOverflowPlayers, totalOverflowItems, totalDataSize);
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -337,6 +340,6 @@ public class YmlStorage implements StorageInterface {
             }
 
             return result;
-        });
+        }, ioExecutor);
     }
 }

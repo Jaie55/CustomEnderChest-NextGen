@@ -14,13 +14,12 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * ItemSerializer using Paper's data component API
@@ -33,7 +32,8 @@ public final class ItemSerializer {
 
     /**
      * Serialize ItemStack array to Base64 string using Paper's data component API
-     * This method converts ItemStack components to raw bytes, which Paper's DataFixer handles automatically
+     * This method converts ItemStack components to raw bytes, which Paper's
+     * DataFixer handles automatically
      *
      * @param items Array of ItemStack to serialize
      * @return Base64 encoded string containing serialized items
@@ -45,7 +45,7 @@ public final class ItemSerializer {
         }
 
         try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-             DataOutputStream dataOutput = new DataOutputStream(outputStream)) {
+                DataOutputStream dataOutput = new DataOutputStream(outputStream)) {
 
             // Write array length
             dataOutput.writeInt(items.length);
@@ -71,8 +71,10 @@ public final class ItemSerializer {
     }
 
     /**
-     * Deserialize ItemStack array from Base64 string using Paper's data component API
-     * This method uses Paper's DataFixer to automatically upgrade old component formats
+     * Deserialize ItemStack array from Base64 string using Paper's data component
+     * API
+     * This method uses Paper's DataFixer to automatically upgrade old component
+     * formats
      *
      * @param data Base64 encoded string containing serialized items
      * @return Array of deserialized ItemStacks, or empty array if data is invalid
@@ -93,12 +95,13 @@ public final class ItemSerializer {
 
         // Try to detect format by reading first 4 bytes (array length)
         try (ByteArrayInputStream peekStream = new ByteArrayInputStream(bytes);
-             DataInputStream peekInput = new DataInputStream(peekStream)) {
+                DataInputStream peekInput = new DataInputStream(peekStream)) {
 
             int firstInt = peekInput.readInt();
 
             // If the first integer is reasonable (0-256), it's likely new format
-            // If it's unreasonable (like -1393754107), it's old BukkitObjectInputStream format
+            // If it's unreasonable (like -1393754107), it's old BukkitObjectInputStream
+            // format
             if (firstInt >= 0 && firstInt <= 256) {
                 // Try new format first
                 try {
@@ -123,7 +126,7 @@ public final class ItemSerializer {
      */
     private static ItemStack[] deserializeNewFormat(byte[] bytes) throws IOException {
         try (ByteArrayInputStream inputStream = new ByteArrayInputStream(bytes);
-             DataInputStream dataInput = new DataInputStream(inputStream)) {
+                DataInputStream dataInput = new DataInputStream(inputStream)) {
 
             int length = dataInput.readInt();
 
@@ -143,7 +146,8 @@ public final class ItemSerializer {
 
                     // Sanity check for item data size (max 1MB per item)
                     if (itemBytesLength < 0 || itemBytesLength > 1_000_000) {
-                        LOGGER.log(Level.WARNING, "Invalid item data size at slot " + i + ": " + itemBytesLength + ", skipping item");
+                        LOGGER.log(Level.WARNING,
+                                "Invalid item data size at slot " + i + ": " + itemBytesLength + ", skipping item");
                         items[i] = null;
                         continue;
                     }
@@ -173,7 +177,8 @@ public final class ItemSerializer {
      * This handles data from old plugin versions (pre-Paper migration)
      * <p>
      * IMPORTANT: For data from <1.21.4 -> 1.21.5+ migration:
-     * If you get errors, you MUST convert data on <1.21.4 server first before upgrading to 1.21.5+
+     * If you get errors, you MUST convert data on <1.21.4 server first before
+     * upgrading to 1.21.5+
      */
     private static ItemStack[] deserializeLegacyFormat(byte[] bytes) throws IOException {
         LOGGER.log(Level.WARNING, "=================================================================");
@@ -183,14 +188,15 @@ public final class ItemSerializer {
         // Don't spam OPs on every legacy data load - only notify if migration fails
 
         try (ByteArrayInputStream inputStream = new ByteArrayInputStream(bytes);
-             BukkitObjectInputStream objectInput = new BukkitObjectInputStream(inputStream)) {
+                BukkitObjectInputStream objectInput = new BukkitObjectInputStream(inputStream)) {
 
             Object obj = objectInput.readObject();
 
             if (obj instanceof ItemStack[] legacyItems) {
                 LOGGER.log(Level.INFO, "Successfully loaded " + legacyItems.length + " slots from legacy format");
 
-                // Items are already loaded, Paper has already applied DataFixer during deserialization
+                // Items are already loaded, Paper has already applied DataFixer during
+                // deserialization
                 // Just return them - they will be re-saved in new format on next save
                 int successCount = 0;
                 int nullCount = 0;
@@ -203,11 +209,13 @@ public final class ItemSerializer {
                     }
                 }
 
-                LOGGER.log(Level.INFO, "Legacy migration completed: " + successCount + " items loaded, " + nullCount + " empty slots");
+                LOGGER.log(Level.INFO,
+                        "Legacy migration completed: " + successCount + " items loaded, " + nullCount + " empty slots");
                 return legacyItems;
 
             } else {
-                throw new IOException("Unexpected object type in legacy data: " + (obj != null ? obj.getClass() : "null"));
+                throw new IOException(
+                        "Unexpected object type in legacy data: " + (obj != null ? obj.getClass() : "null"));
             }
 
         } catch (ClassNotFoundException e) {
@@ -222,8 +230,8 @@ public final class ItemSerializer {
             LOGGER.log(Level.SEVERE, "TO FIX THIS ISSUE:");
             LOGGER.log(Level.SEVERE, "1. Downgrade your server back to <1.21.4");
             LOGGER.log(Level.SEVERE, "2. Install this plugin on <1.21.4 server");
-            LOGGER.log(Level.SEVERE, "3. Run command: /cec convertall");
-            LOGGER.log(Level.SEVERE, "4. Wait for conversion to complete");
+            LOGGER.log(Level.SEVERE, "3. Run command: /cec migrate yml mysql");
+            LOGGER.log(Level.SEVERE, "4. Wait for migration to complete");
             LOGGER.log(Level.SEVERE, "5. Then upgrade server to 1.21.5+");
             LOGGER.log(Level.SEVERE, "");
             LOGGER.log(Level.SEVERE, "CURRENT STATUS:");
@@ -239,7 +247,6 @@ public final class ItemSerializer {
         }
     }
 
-
     /**
      * Notifies all online OPs about conversion failure
      * Tells them the data couldn't be migrated automatically
@@ -251,21 +258,22 @@ public final class ItemSerializer {
                     .forEach(op -> {
                         // Get plugin instance
                         EnderChest plugin = (EnderChest) Bukkit.getPluginManager().getPlugin("CustomEnderChest");
-                        if (plugin == null) return;
+                        if (plugin == null)
+                            return;
 
                         // Get prefix from lang file and use Text utility for parsing
                         Component prefix = plugin.getLocaleManager().getComponent("prefix");
 
                         op.sendMessage(prefix.append(Text.parse("<bold><dark_red>CRITICAL ERROR!")));
-                        op.sendMessage(prefix.append(Text.parse("<red>Failed to migrate player data from old format!")));
+                        op.sendMessage(
+                                prefix.append(Text.parse("<red>Failed to migrate player data from old format!")));
                         op.sendMessage(prefix.append(Text.parse("<red>Player received empty enderchest.")));
                         op.sendMessage(Component.empty());
                         op.sendMessage(prefix.append(Text.parse("<bold><yellow>TO FIX:")));
                         op.sendMessage(prefix.append(Text.parse("<yellow>1. Downgrade server to 1.21.4")));
-                        op.sendMessage(prefix.append(Text.parse("<yellow>2. Run: /cec convertall")));
+                        op.sendMessage(prefix.append(Text.parse("<yellow>2. Run: /cec migrate yml mysql")));
                         op.sendMessage(prefix.append(Text.parse("<yellow>3. Then upgrade to 1.21.5+")));
-                    })
-            );
+                    }));
         } catch (Exception ignored) {
             // Ignore if we can't notify
         }
@@ -280,9 +288,15 @@ public final class ItemSerializer {
      * @return A list of Maps suitable for YAML serialization
      */
     public static List<Map<String, Object>> serialize(ItemStack[] items) {
-        return Stream.of(items)
-                .map(item -> (item != null && !item.getType().isAir()) ? item.serialize() : null)
-                .collect(Collectors.toList());
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (ItemStack item : items) {
+            if (item != null && !item.getType().isAir()) {
+                result.add(item.serialize());
+            } else {
+                result.add(null);
+            }
+        }
+        return result;
     }
 
     /**
@@ -295,8 +309,11 @@ public final class ItemSerializer {
         if (mapList == null) {
             return new ItemStack[0];
         }
-        return mapList.stream()
-                .map(map -> (map != null) ? ItemStack.deserialize(map) : null)
-                .toArray(ItemStack[]::new);
+        ItemStack[] items = new ItemStack[mapList.size()];
+        for (int i = 0; i < mapList.size(); i++) {
+            Map<String, Object> map = mapList.get(i);
+            items[i] = (map != null) ? ItemStack.deserialize(map) : null;
+        }
+        return items;
     }
 }

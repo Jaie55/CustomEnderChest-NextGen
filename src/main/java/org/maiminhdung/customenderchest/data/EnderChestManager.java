@@ -4,6 +4,7 @@ import static org.maiminhdung.customenderchest.EnderChest.ERROR_TRACKER;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.RemovalListener;
 import lombok.Getter;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Material;
@@ -54,6 +55,24 @@ public class EnderChestManager {
         // offline for a while.
         this.liveData = CacheBuilder.newBuilder()
                 .expireAfterAccess(30, TimeUnit.MINUTES)
+                .removalListener((RemovalListener<UUID, Inventory>) notification -> {
+                    UUID uuid = notification.getKey();
+                    if (uuid != null) {
+                        Player player = Bukkit.getPlayer(uuid);
+                        if (player != null && player.isOnline()) {
+                            // Player is online, re-cache to prevent eviction
+                            Inventory inv = notification.getValue();
+                            if (inv != null) {
+                                Scheduler.runEntityTask(player, () -> {
+                                    if (player.isOnline()) {
+                                        getLiveData().put(uuid, inv);
+                                        plugin.getDebugLogger().log("Prevented cache eviction of online player: " + player.getName());
+                                    }
+                                });
+                            }
+                        }
+                    }
+                })
                 .build();
 
         // Start the auto-save task to prevent data loss on server crash.
@@ -163,31 +182,39 @@ public class EnderChestManager {
                                 //  Empty array means deserialization failed - DO NOT cache empty inventory!
                                 // Check if player actually had data in database
                                 plugin.getStorageManager().getStorage().loadEnderChestSize(player.getUniqueId())
-                                        .thenAccept(savedSize -> {
-                                            if (savedSize > 0) {
-                                                // Player had data, but it couldn't be loaded (version incompatibility)
-                                                // DO NOT put empty inventory in cache - this would delete their data!
-                                                plugin.getLogger().warning("[DATA PROTECTION] Player " + player.getName() +
-                                                        " has corrupted/incompatible data (saved size: " + savedSize +
-                                                        "). NOT loading empty inventory to prevent data loss.");
-                                                Scheduler.runEntityTask(player, () -> {
-                                                    LocaleManager locale = plugin.getLocaleManager();
-                                                    player.sendMessage(locale.getPrefixedComponent(
-                                                            "messages.migration-data-incompatible"));
-                                                    player.sendMessage(locale
-                                                            .getPrefixedComponent("messages.migration-data-cleared"));
-                                                    player.sendMessage(locale
-                                                            .getPrefixedComponent("messages.migration-contact-admin"));
-                                                });
-                                            } else {
-                                                // Player truly has no data, safe to create empty inventory
-                                                plugin.getDebugLogger().log("Player " + player.getName() + " has no saved data, creating empty inventory");
-                                                liveData.put(player.getUniqueId(), inv);
+                                        .whenComplete((savedSize, sizeError) -> {
+                                            try {
+                                                if (sizeError != null) {
+                                                    plugin.getLogger().log(Level.SEVERE, "Failed to load enderchest size for " + player.getName(), sizeError);
+                                                    return;
+                                                }
+                                                if (savedSize > 0) {
+                                                    // Player had data, but it couldn't be loaded (version incompatibility)
+                                                    // DO NOT put empty inventory in cache - this would delete their data!
+                                                    plugin.getLogger().warning("[DATA PROTECTION] Player " + player.getName() +
+                                                            " has corrupted/incompatible data (saved size: " + savedSize +
+                                                            "). NOT loading empty inventory to prevent data loss.");
+                                                    Scheduler.runEntityTask(player, () -> {
+                                                        if (player.isOnline()) {
+                                                            LocaleManager locale = plugin.getLocaleManager();
+                                                            player.sendMessage(locale.getPrefixedComponent(
+                                                                    "messages.migration-data-incompatible"));
+                                                            player.sendMessage(locale
+                                                                    .getPrefixedComponent("messages.migration-data-cleared"));
+                                                            player.sendMessage(locale
+                                                                    .getPrefixedComponent("messages.migration-contact-admin"));
+                                                        }
+                                                    });
+                                                } else {
+                                                    // Player truly has no data, safe to create empty inventory
+                                                    plugin.getDebugLogger().log("Player " + player.getName() + " has no saved data, creating empty inventory");
+                                                    liveData.put(player.getUniqueId(), inv);
+                                                }
+                                            } finally {
+                                                dataLockManager.unlock(player.getUniqueId());
+                                                plugin.getDebugLogger().log("Data lock released for " + player.getName() + " after size check");
                                             }
                                         });
-                                // Don't put in cache yet - wait for the size check above
-                                dataLockManager.unlock(player.getUniqueId());
-                                plugin.getDebugLogger().log("Data lock released for " + player.getName());
                                 return;
                             } else if (size > 0) {
                                 if (items.length <= size) {
@@ -306,6 +333,10 @@ public class EnderChestManager {
 
         if (!dataLockManager.lock(playerUuid)) {
             plugin.getDebugLogger().log("Player " + playerName + " quit, but data is locked. Skipping quit-save.");
+            if (liveData.getIfPresent(playerUuid) == null) {
+                dataLockManager.unlock(playerUuid);
+                plugin.getDebugLogger().log("Forced unlock on quit for " + playerName + " due to missing cache data.");
+            }
             return;
         }
 

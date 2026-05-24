@@ -141,7 +141,6 @@ Implemented subcommands:
 - `/cec reload`
 - `/cec import vanilla`
 - `/cec delete <player>`
-- `/cec convertall` (bulk data format conversion)
 - `/cec migrate <source> <target>` (structural data migration between storage types)
 - `/cec stats [validate]` (shows storage numbers or validates corrupted records)
 

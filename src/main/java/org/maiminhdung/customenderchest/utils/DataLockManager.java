@@ -1,8 +1,9 @@
 package org.maiminhdung.customenderchest.utils;
 
-import java.util.Set;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 /**
@@ -11,7 +12,9 @@ import java.util.function.Supplier;
  */
 public class DataLockManager {
 
-    private final Set<UUID> lockedPlayers = ConcurrentHashMap.newKeySet();
+    private final Cache<UUID, Boolean> lockedPlayers = CacheBuilder.newBuilder()
+            .expireAfterWrite(60, TimeUnit.SECONDS)
+            .build();
 
     /**
      * Attempts to lock a UUID atomically.
@@ -19,7 +22,7 @@ public class DataLockManager {
      * @return true if the lock was acquired successfully, false if it was already locked.
      */
     public boolean lock(UUID uuid) {
-        return lockedPlayers.add(uuid);
+        return lockedPlayers.asMap().putIfAbsent(uuid, Boolean.TRUE) == null;
     }
 
     /**
@@ -27,7 +30,7 @@ public class DataLockManager {
      * @param uuid The UUID to unlock.
      */
     public void unlock(UUID uuid) {
-        lockedPlayers.remove(uuid);
+        lockedPlayers.invalidate(uuid);
     }
 
     /**
@@ -37,7 +40,7 @@ public class DataLockManager {
      * @return true if the UUID is locked.
      */
     public boolean isLocked(UUID uuid) {
-        return lockedPlayers.contains(uuid);
+        return lockedPlayers.asMap().containsKey(uuid);
     }
 
     /**

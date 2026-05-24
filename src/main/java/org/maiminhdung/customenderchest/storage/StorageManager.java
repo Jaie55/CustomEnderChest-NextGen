@@ -16,15 +16,28 @@ import java.io.File;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class StorageManager {
 
     private final EnderChest plugin;
     private HikariDataSource dataSource;
     private final StorageInterface storageImplementation;
+    private final ExecutorService ioExecutor;
 
     public StorageManager(EnderChest plugin) {
         this.plugin = plugin;
+        
+        // Bounded executor pool for IO operations
+        int threadPoolSize = plugin.config().getInt("storage.pool-settings.max-pool-size", 10);
+        this.ioExecutor = Executors.newFixedThreadPool(threadPoolSize, runnable -> {
+            Thread thread = new Thread(runnable);
+            thread.setName("CEC-IO-Worker-" + thread.getId());
+            thread.setDaemon(true);
+            return thread;
+        });
+
         String storageType = plugin.config().getString("storage.type", "yml").toLowerCase();
 
         // Use H2 or MySQL if specified, otherwise default to YML
@@ -36,7 +49,7 @@ public class StorageManager {
                 } else {
                     plugin.getLogger()
                             .severe("MySQL connection failed! Falling back to YML storage as a safe default.");
-                    this.storageImplementation = new YmlStorage(plugin);
+                    this.storageImplementation = new YmlStorage(this);
                 }
                 break;
             case "h2":
@@ -45,14 +58,14 @@ public class StorageManager {
                     this.storageImplementation = new H2Storage(this);
                 } else {
                     plugin.getLogger().severe("H2 connection failed! Falling back to YML storage as a safe default.");
-                    this.storageImplementation = new YmlStorage(plugin);
+                    this.storageImplementation = new YmlStorage(this);
                 }
                 break;
             case "yml":
             default:
                 plugin.getLogger().info("Using YML for data storage.");
                 this.dataSource = null;
-                this.storageImplementation = new YmlStorage(plugin);
+                this.storageImplementation = new YmlStorage(this);
                 break;
         }
 
@@ -61,6 +74,16 @@ public class StorageManager {
 
     public StorageManager(EnderChest plugin, String forceStorageType) {
         this.plugin = plugin;
+
+        // Bounded executor pool for IO operations
+        int threadPoolSize = plugin.config().getInt("storage.pool-settings.max-pool-size", 10);
+        this.ioExecutor = Executors.newFixedThreadPool(threadPoolSize, runnable -> {
+            Thread thread = new Thread(runnable);
+            thread.setName("CEC-IO-Worker-" + thread.getId());
+            thread.setDaemon(true);
+            return thread;
+        });
+
         switch (forceStorageType.toLowerCase()) {
             case "mysql":
                 plugin.getLogger().info("Migration: Initializing MySQL storage.");
@@ -84,12 +107,20 @@ public class StorageManager {
             default:
                 plugin.getLogger().info("Migration: Initializing YML storage.");
                 this.dataSource = null;
-                this.storageImplementation = new YmlStorage(plugin);
+                this.storageImplementation = new YmlStorage(this);
                 break;
         }
         if (this.storageImplementation != null) {
             this.storageImplementation.init();
         }
+    }
+
+    public ExecutorService getIoExecutor() {
+        return this.ioExecutor;
+    }
+
+    public EnderChest getPlugin() {
+        return this.plugin;
     }
 
     private boolean connectMySQL() {
@@ -346,6 +377,18 @@ public class StorageManager {
         if (dataSource != null && !dataSource.isClosed()) {
             dataSource.close();
             plugin.getLogger().info("Database connection pool closed.");
+        }
+        if (ioExecutor != null && !ioExecutor.isShutdown()) {
+            ioExecutor.shutdown();
+            try {
+                if (!ioExecutor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                    ioExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                ioExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+            plugin.getLogger().info("Database thread pool shut down.");
         }
     }
 
