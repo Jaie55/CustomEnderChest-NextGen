@@ -4,6 +4,7 @@ import org.bukkit.inventory.ItemStack;
 import org.maiminhdung.customenderchest.EnderChest;
 import org.maiminhdung.customenderchest.Scheduler;
 import org.maiminhdung.customenderchest.data.EnderChestManager;
+import org.maiminhdung.customenderchest.data.BulkImporter;
 import org.maiminhdung.customenderchest.storage.StorageInterface;
 import org.maiminhdung.customenderchest.utils.DataLockManager;
 import org.maiminhdung.customenderchest.locale.LocaleManager;
@@ -36,12 +37,14 @@ public final class EnderChestCommand implements CommandExecutor, TabCompleter {
     private final StorageInterface storage;
     private final EnderChestManager manager;
     private final MigrationManager migrationManager;
+    private final BulkImporter bulkImporter;
 
     public EnderChestCommand(EnderChest plugin) {
         this.plugin = plugin;
         this.storage = plugin.getStorageManager().getStorage();
         this.manager = plugin.getEnderChestManager();
         this.migrationManager = new MigrationManager(plugin);
+        this.bulkImporter = new BulkImporter(plugin);
     }
 
     public MigrationManager getMigrationManager() {
@@ -250,8 +253,8 @@ public final class EnderChestCommand implements CommandExecutor, TabCompleter {
     }
 
     /**
-     * Handle /cec import command
-     * Imports vanilla ender chest data for all online players (admin only)
+     * Handle /cec import vanilla command
+     * Bulk imports vanilla enderchest data for all players (online + offline)
      */
     private void handleImport(CommandSender sender, String[] args) {
         if (!hasSenderPermission(sender, "CustomEnderChest.admin")) {
@@ -266,7 +269,7 @@ public final class EnderChestCommand implements CommandExecutor, TabCompleter {
 
         String importType = args[1].toLowerCase();
         if (importType.equals("vanilla")) {
-            plugin.getLegacyImporter().runVanillaImportAll(sender);
+            bulkImporter.importAll(sender);
         } else {
             sender.sendMessage(plugin.getLocaleManager().getPrefixedComponent("command.import-invalid-type"));
         }
@@ -492,6 +495,12 @@ public final class EnderChestCommand implements CommandExecutor, TabCompleter {
                 statsCompletions.add("help");
                 return statsCompletions.stream()
                         .filter(s -> s.toLowerCase().startsWith(args[1].toLowerCase()))
+                        .collect(Collectors.toList());
+            }
+            // Import subcommand completions
+            if (args[0].equalsIgnoreCase("import") && sender.hasPermission("CustomEnderChest.admin")) {
+                return List.of("vanilla").stream()
+                        .filter(s -> s.startsWith(args[1].toLowerCase()))
                         .collect(Collectors.toList());
             }
         }

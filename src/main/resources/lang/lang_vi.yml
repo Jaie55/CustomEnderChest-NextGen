@@ -62,6 +62,4 @@ levels:
 import:
   started: "<green>Bắt đầu chuyển dữ liệu vanilla sang plugin cho tất cả người chơi trực tuyến..."
   complete: "<green>Chuyển hoàn tất! Đã chuyển cho <white><imported></white> người chơi, bỏ qua <white><skipped></white>."
-  auto-import-started: "<yellow>Đang tự động chuyển vật phẩm từ rương ender vanilla của bạn..."
-  auto-import-complete: "<green>Tự động chuyển hoàn tất! Đã chuyển <white><count></white> vật phẩm từ rương ender vanilla."
-  auto-import-failed: "<red>Không thể tự động chuyển dữ liệu rương ender vanilla. Vui lòng liên hệ admin."
+  nbtapi-missing: "<red>Cần cài đặt plugin NBTAPI để sử dụng lệnh này. Vui lòng cài đặt NBTAPI trên server."

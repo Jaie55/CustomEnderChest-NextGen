@@ -108,13 +108,6 @@ default-player:
   # If false, players will need "CustomEnderChest.commands" permission to use commands.
   allow-command: true
 
-# Import settings for vanilla ender chest data
-import:
-  # Automatically import vanilla ender chest items when a player joins
-  # This will transfer items from their vanilla ender chest to the plugin's storage
-  # Items are merged with existing data (vanilla items go to empty slots)
-  auto-import-on-join: false
-
 # Sound customization
 sounds:
   # Disable all plugin sounds if set to `true`.

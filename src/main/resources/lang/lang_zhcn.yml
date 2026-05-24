@@ -53,6 +53,4 @@ levels:
 import:
   started: "<green>Starting vanilla ender chest import for all online players..."
   complete: "<green>Import complete! <white><imported></white> players imported, <white><skipped></white> skipped."
-  auto-import-started: "<yellow>Auto-importing your vanilla ender chest items..."
-  auto-import-complete: "<green>Auto-import complete! <white><count></white> items imported from vanilla ender chest."
-  auto-import-failed: "<red>Failed to auto-import your vanilla ender chest data. Please contact an admin."
+  nbtapi-missing: "<red>NBTAPI plugin is required for this command. Please install NBTAPI on your server."

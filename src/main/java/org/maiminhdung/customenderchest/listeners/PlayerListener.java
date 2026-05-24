@@ -37,21 +37,11 @@ public class PlayerListener implements Listener {
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
         plugin.getEnderChestManager().onPlayerJoin(player);
-
-        // Trigger auto-import of vanilla ender chest data after a short delay
-        // to ensure player data is fully loaded
-        Scheduler.runEntityTaskLater(player, () -> {
-            if (player.isOnline()) {
-                plugin.getLegacyImporter().autoImportOnJoin(player);
-            }
-        }, 40L); // 2 second delay to ensure data is loaded
     }
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         plugin.getEnderChestManager().onPlayerQuit(event.getPlayer());
-        // Clear auto-import tracking when player quits
-        plugin.getLegacyImporter().clearAutoImportTracking(event.getPlayer().getUniqueId());
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)

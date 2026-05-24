@@ -11,7 +11,6 @@ import org.maiminhdung.customenderchest.bstats.Metrics;
 import org.maiminhdung.customenderchest.bstats.Metrics.SimplePie;
 import org.maiminhdung.customenderchest.commands.EnderChestCommand;
 import org.maiminhdung.customenderchest.data.EnderChestManager;
-import org.maiminhdung.customenderchest.data.LegacyImporter;
 import org.maiminhdung.customenderchest.data.MetricsDataProvider;
 import org.maiminhdung.customenderchest.listeners.PlayerListener;
 import org.maiminhdung.customenderchest.locale.LocaleManager;
@@ -47,8 +46,6 @@ public final class EnderChest extends JavaPlugin {
 	@Getter
 	private BackupManager backupManager;
 	@Getter
-	private LegacyImporter legacyImporter;
-	@Getter
 	private MetricsDataProvider metricsDataProvider;
 	@Getter
 	private BukkitMetrics fastStatsMetrics;
@@ -69,9 +66,6 @@ public final class EnderChest extends JavaPlugin {
 
 		// Initialize the core logic manager
 		this.enderChestManager = new EnderChestManager(this);
-
-		// Initialize Legacy Importer for vanilla data import
-		this.legacyImporter = new LegacyImporter(this);
 
 		// Initialize Backup Manager
 		this.backupManager = new BackupManager(this);
