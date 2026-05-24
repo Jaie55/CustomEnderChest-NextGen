@@ -21,7 +21,6 @@ import org.maiminhdung.customenderchest.data.EnderChestManager;
 import org.maiminhdung.customenderchest.locale.LocaleManager;
 import org.maiminhdung.customenderchest.utils.DataLockManager;
 import org.maiminhdung.customenderchest.utils.DebugLogger;
-import org.maiminhdung.customenderchest.utils.EnderChestAnimation;
 
 import java.util.Map;
 import java.util.UUID;
@@ -94,9 +93,15 @@ public class PlayerListener implements Listener {
         Block clickedBlock = event.getClickedBlock();
         playerEnderChestBlocks.put(player.getUniqueId(), clickedBlock);
 
-        // Send open animation BEFORE opening the inventory
-        // This matches vanilla behavior where animation plays first
-        EnderChestAnimation.playOpenAnimation(player, clickedBlock);
+        // Send open animation using Bukkit API (like VariableEnderChests)
+        // This triggers the lid opening animation on the client
+        try {
+            org.bukkit.block.EnderChest chestBlock = (org.bukkit.block.EnderChest) clickedBlock.getState();
+            chestBlock.open();
+            chestBlock.update();
+        } catch (Exception e) {
+            debug.log("Failed to send enderchest open animation: " + e.getMessage());
+        }
 
         // Let the EnderChestManager handle the permission check logic now
         plugin.getEnderChestManager().openEnderChest(player);
@@ -279,7 +284,19 @@ public class PlayerListener implements Listener {
             // Send close animation if player opened via block click
             Block enderChestBlock = playerEnderChestBlocks.remove(player.getUniqueId());
             if (enderChestBlock != null) {
-                EnderChestAnimation.playCloseAnimation(player, enderChestBlock);
+                // Close the lid only when the last viewer closes (like VariableEnderChests)
+                // event.getViewers() still includes the closing player, so remove them first
+                java.util.List<org.bukkit.entity.HumanEntity> viewers = new java.util.ArrayList<>(event.getViewers());
+                viewers.remove(player);
+                if (viewers.isEmpty()) {
+                    try {
+                        org.bukkit.block.EnderChest chestBlock = (org.bukkit.block.EnderChest) enderChestBlock.getState();
+                        chestBlock.close();
+                        chestBlock.update();
+                    } catch (Exception e) {
+                        debug.log("Failed to send enderchest close animation: " + e.getMessage());
+                    }
+                }
             }
 
             // Save data immediately when player closes their ender chest to prevent data

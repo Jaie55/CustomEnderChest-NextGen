@@ -1,7 +1,5 @@
 package org.maiminhdung.customenderchest;
 
-import com.github.retrooper.packetevents.PacketEvents;
-import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder;
 import dev.faststats.bukkit.BukkitMetrics;
 import dev.faststats.core.ErrorTracker;
 import dev.faststats.core.data.Metric;
@@ -55,10 +53,6 @@ public final class EnderChest extends JavaPlugin {
 	@Override
 	public void onEnable() {
 		instance = this;
-		
-		// Initialize PacketEvents
-		PacketEvents.setAPI(SpigotPacketEventsBuilder.build(this));
-		PacketEvents.getAPI().load();
 
 		// Initialize configuration
 		this.configHandler = new ConfigHandler(this);
@@ -142,11 +136,6 @@ public final class EnderChest extends JavaPlugin {
 	@Override
 	public void onDisable() {
 		this.getLogger().info("CustomEnderChest is shutting down...");
-		
-		// Shutdown PacketEvents
-		if (PacketEvents.getAPI() != null) {
-			PacketEvents.getAPI().terminate();
-		}
 
 		// Shutdown FastStats metrics
 		if (this.fastStatsMetrics != null) {
