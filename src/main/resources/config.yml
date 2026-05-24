@@ -94,6 +94,10 @@ enderchest-options:
   # Useful if you want to reserve the block for vanilla use only.
   # Note: If this option is true, don't set true for `disable-enderchest-click` above.
   vanilla-enderchest-block: false
+  # Play the physical lid open/close animation of the Ender Chest block.
+  # Note: Disabling this prevents the vanilla ender chest sound from playing,
+  # allowing you to hear ONLY the custom sound configured in the `sounds` section.
+  play-block-animation: true
 
 # Default settings for players
 default-player:

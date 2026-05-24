@@ -46,6 +46,8 @@ public final class EnderChest extends JavaPlugin {
 	@Getter
 	private BackupManager backupManager;
 	@Getter
+	private PlayerListener playerListener;
+	@Getter
 	private MetricsDataProvider metricsDataProvider;
 	@Getter
 	private BukkitMetrics fastStatsMetrics;
@@ -83,7 +85,8 @@ public final class EnderChest extends JavaPlugin {
 		reloadConfig();
 
 		// Register listeners and commands
-		this.getServer().getPluginManager().registerEvents(new PlayerListener(this), this);
+		this.playerListener = new PlayerListener(this);
+		this.getServer().getPluginManager().registerEvents(this.playerListener, this);
 		// Register commands and tab completer
 		EnderChestCommand commandExecutor = new EnderChestCommand(this);
 		PluginCommand command = this.getCommand("customenderchest");

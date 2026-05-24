@@ -43,6 +43,13 @@ public class PlayerListener implements Listener {
         this.debug = plugin.getDebugLogger();
     }
 
+    /**
+     * Checks if the player has an entry in playerEnderChestBlocks (meaning they opened via block click).
+     */
+    public boolean hasInteractedWithBlock(UUID uuid) {
+        return playerEnderChestBlocks.containsKey(uuid);
+    }
+
     @EventHandler(priority = EventPriority.MONITOR)
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
@@ -52,8 +59,19 @@ public class PlayerListener implements Listener {
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         plugin.getEnderChestManager().onPlayerQuit(event.getPlayer());
-        // Clean up block tracking
-        playerEnderChestBlocks.remove(event.getPlayer().getUniqueId());
+        // Clean up block tracking and close the physical block animation if it was left open
+        Block enderChestBlock = playerEnderChestBlocks.remove(event.getPlayer().getUniqueId());
+        if (enderChestBlock != null && plugin.getConfig().getBoolean("enderchest-options.play-block-animation", true)) {
+            try {
+                if (enderChestBlock.getType() == Material.ENDER_CHEST) {
+                    org.bukkit.block.EnderChest chestBlock = (org.bukkit.block.EnderChest) enderChestBlock.getState();
+                    chestBlock.close();
+                    chestBlock.update();
+                }
+            } catch (Exception e) {
+                debug.log("Failed to send enderchest close animation on quit: " + e.getMessage());
+            }
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -89,22 +107,28 @@ public class PlayerListener implements Listener {
             return;
         }
 
-        // Store the clicked block for animation tracking
+        // Store the clicked block for animation tracking first so that the SoundHandler can detect if it's a block click
         Block clickedBlock = event.getClickedBlock();
         playerEnderChestBlocks.put(player.getUniqueId(), clickedBlock);
 
-        // Send open animation using Bukkit API (like VariableEnderChests)
-        // This triggers the lid opening animation on the client
-        try {
-            org.bukkit.block.EnderChest chestBlock = (org.bukkit.block.EnderChest) clickedBlock.getState();
-            chestBlock.open();
-            chestBlock.update();
-        } catch (Exception e) {
-            debug.log("Failed to send enderchest open animation: " + e.getMessage());
+        // Let the EnderChestManager handle the permission check logic and open the inventory.
+        // We only animate the physical block lid open if the inventory opened successfully.
+        if (plugin.getEnderChestManager().openEnderChest(player)) {
+            // Send open animation using Bukkit API (like VariableEnderChests)
+            // This triggers the lid opening animation on the client
+            if (plugin.getConfig().getBoolean("enderchest-options.play-block-animation", true)) {
+                try {
+                    org.bukkit.block.EnderChest chestBlock = (org.bukkit.block.EnderChest) clickedBlock.getState();
+                    chestBlock.open();
+                    chestBlock.update();
+                } catch (Exception e) {
+                    debug.log("Failed to send enderchest open animation: " + e.getMessage());
+                }
+            }
+        } else {
+            // If opening failed (e.g. locked, loading, etc.), remove from block tracking
+            playerEnderChestBlocks.remove(player.getUniqueId());
         }
-
-        // Let the EnderChestManager handle the permission check logic now
-        plugin.getEnderChestManager().openEnderChest(player);
     }
 
     /**
@@ -281,6 +305,9 @@ public class PlayerListener implements Listener {
         if (closedInventory.equals(cachedInv)) {
             plugin.getSoundHandler().playSound(player, "close");
 
+            // Instantly stop tracking this open inventory in real-time
+            manager.getOpenInventories().remove(player.getUniqueId());
+
             // Send close animation if player opened via block click
             Block enderChestBlock = playerEnderChestBlocks.remove(player.getUniqueId());
             if (enderChestBlock != null) {
@@ -289,12 +316,14 @@ public class PlayerListener implements Listener {
                 java.util.List<org.bukkit.entity.HumanEntity> viewers = new java.util.ArrayList<>(event.getViewers());
                 viewers.remove(player);
                 if (viewers.isEmpty()) {
-                    try {
-                        org.bukkit.block.EnderChest chestBlock = (org.bukkit.block.EnderChest) enderChestBlock.getState();
-                        chestBlock.close();
-                        chestBlock.update();
-                    } catch (Exception e) {
-                        debug.log("Failed to send enderchest close animation: " + e.getMessage());
+                    if (plugin.getConfig().getBoolean("enderchest-options.play-block-animation", true)) {
+                        try {
+                            org.bukkit.block.EnderChest chestBlock = (org.bukkit.block.EnderChest) enderChestBlock.getState();
+                            chestBlock.close();
+                            chestBlock.update();
+                        } catch (Exception e) {
+                            debug.log("Failed to send enderchest close animation: " + e.getMessage());
+                        }
                     }
                 }
             }

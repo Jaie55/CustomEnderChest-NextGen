@@ -4,6 +4,7 @@ import static org.maiminhdung.customenderchest.EnderChest.ERROR_TRACKER;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.RemovalCause;
 import com.google.common.cache.RemovalListener;
 import lombok.Getter;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
@@ -56,19 +57,21 @@ public class EnderChestManager {
         this.liveData = CacheBuilder.newBuilder()
                 .expireAfterAccess(30, TimeUnit.MINUTES)
                 .removalListener((RemovalListener<UUID, Inventory>) notification -> {
-                    UUID uuid = notification.getKey();
-                    if (uuid != null) {
-                        Player player = Bukkit.getPlayer(uuid);
-                        if (player != null && player.isOnline()) {
-                            // Player is online, re-cache to prevent eviction
-                            Inventory inv = notification.getValue();
-                            if (inv != null) {
-                                Scheduler.runEntityTask(player, () -> {
-                                    if (player.isOnline()) {
-                                        getLiveData().put(uuid, inv);
-                                        plugin.getDebugLogger().log("Prevented cache eviction of online player: " + player.getName());
-                                    }
-                                });
+                    if (notification.getCause() == RemovalCause.EXPIRED) {
+                        UUID uuid = notification.getKey();
+                        if (uuid != null) {
+                            Player player = Bukkit.getPlayer(uuid);
+                            if (player != null && player.isOnline()) {
+                                // Player is online, re-cache to prevent eviction
+                                Inventory inv = notification.getValue();
+                                if (inv != null) {
+                                    Scheduler.runEntityTask(player, () -> {
+                                        if (player.isOnline()) {
+                                            getLiveData().put(uuid, inv);
+                                            plugin.getDebugLogger().log("Prevented cache eviction of online player: " + player.getName());
+                                        }
+                                    });
+                                }
                             }
                         }
                     }
@@ -126,12 +129,13 @@ public class EnderChestManager {
                                         plugin.getDebugLogger().log("Found existing data under old UUID: " + oldUUID + " for player " + playerName);
                                         // Load data from old UUID and migrate it
                                         return plugin.getStorageManager().getStorage().loadEnderChest(oldUUID)
-                                                .thenApply(oldItems -> {
+                                                .thenCompose(oldItems -> {
                                                     if (oldItems != null && oldItems.length > 0) {
-                                                        // Schedule migration of data to new UUID
-                                                        migratePlayerData(player, oldUUID, currentUUID, oldItems);
+                                                         // Chain migration and resolve with oldItems once complete
+                                                         return migratePlayerData(player, oldUUID, currentUUID, oldItems)
+                                                                 .thenApply(v -> oldItems);
                                                     }
-                                                    return oldItems;
+                                                    return CompletableFuture.completedFuture(oldItems);
                                                 });
                                     }
                                     return CompletableFuture.completedFuture(null);
@@ -281,32 +285,30 @@ public class EnderChestManager {
      * Migrate player data from old UUID to new UUID.
      * This handles the case where a player switches between online/offline mode servers.
      */
-    private void migratePlayerData(Player player, UUID oldUUID, UUID newUUID, ItemStack[] items) {
+    private CompletableFuture<Void> migratePlayerData(Player player, UUID oldUUID, UUID newUUID, ItemStack[] items) {
         plugin.getLogger().info("[Migration] Migrating data for " + player.getName() + " from UUID " + oldUUID + " to " + newUUID);
 
         // Get the size from old data
-        plugin.getStorageManager().getStorage().loadEnderChestSize(oldUUID).thenAccept(oldSize -> {
+        return plugin.getStorageManager().getStorage().loadEnderChestSize(oldUUID).thenCompose(oldSize -> {
             int size = oldSize > 0 ? oldSize : EnderChestUtils.getSize(player);
 
             // Save data under new UUID
-            plugin.getStorageManager().getStorage().saveEnderChest(newUUID, player.getName(), size, items)
-                    .thenRun(() -> {
+            return plugin.getStorageManager().getStorage().saveEnderChest(newUUID, player.getName(), size, items)
+                    .thenCompose(v -> {
                         plugin.getLogger().info("[Migration] Successfully migrated enderchest data for " + player.getName());
 
-                        // Also migrate overflow items if any
-                        plugin.getStorageManager().getStorage().loadOverflowItems(oldUUID).thenAccept(overflowItems -> {
-                            if (overflowItems != null && overflowItems.length > 0) {
-                                plugin.getStorageManager().getStorage().saveOverflowItems(newUUID, overflowItems)
-                                        .thenRun(() -> {
-                                            plugin.getDebugLogger().log("[Migration] Migrated overflow items for " + player.getName());
-                                            // Clear old overflow data
-                                            plugin.getStorageManager().getStorage().clearOverflowItems(oldUUID);
-                                        });
-                            }
-                        });
+                        // Chain overflow migration and old data renaming
+                        CompletableFuture<Void> overflowFuture = plugin.getStorageManager().getStorage().loadOverflowItems(oldUUID)
+                                .thenCompose(overflowItems -> {
+                                    if (overflowItems != null && overflowItems.length > 0) {
+                                        return plugin.getStorageManager().getStorage().saveOverflowItems(newUUID, overflowItems)
+                                                .thenCompose(v2 -> plugin.getStorageManager().getStorage().clearOverflowItems(oldUUID));
+                                    }
+                                    return CompletableFuture.completedFuture(null);
+                                });
 
-                        // Rename old data to prevent it from being migrated again and stealing items
-                        plugin.getStorageManager().getStorage().saveEnderChest(oldUUID, "[Migrated] " + player.getName(), size, items);
+                        CompletableFuture<Void> renameOldFuture = plugin.getStorageManager().getStorage()
+                                .saveEnderChest(oldUUID, "[Migrated] " + player.getName(), size, items);
 
                         // Notify player about migration
                         Scheduler.runEntityTask(player, () -> {
@@ -314,6 +316,8 @@ public class EnderChestManager {
                                 player.sendMessage(plugin.getLocaleManager().getPrefixedComponent("messages.data-migrated"));
                             }
                         });
+
+                        return CompletableFuture.allOf(overflowFuture, renameOldFuture);
                     });
         });
     }
@@ -399,15 +403,21 @@ public class EnderChestManager {
     }
 
     // Open the ender chest for the player, loading data if necessary.
-    public void openEnderChest(Player player) {
+    // Returns true if the inventory was successfully opened, false otherwise.
+    public boolean openEnderChest(Player player) {
         if (player == null || !player.isOnline()) {
-            return;
+            return false;
         }
 
         // Check if data is currently being loaded to prevent loops
         if (dataLockManager.isLocked(player.getUniqueId())) {
             player.sendMessage(plugin.getLocaleManager().getPrefixedComponent("messages.data-still-loading"));
-            return;
+            return false;
+        }
+
+        // Prevent opening concurrent views of the same inventory (mitigates double-open race conditions)
+        if (openInventories.containsKey(player.getUniqueId())) {
+            return false;
         }
 
         Inventory inv = getLoadedEnderChest(player.getUniqueId());
@@ -419,14 +429,14 @@ public class EnderChestManager {
                 }
             });
             player.sendMessage(plugin.getLocaleManager().getPrefixedComponent("messages.data-still-loading"));
-            return;
+            return false;
         }
 
         int permissionSize = EnderChestUtils.getSize(player);
         if (permissionSize == 0) {
             player.sendMessage(plugin.getLocaleManager().getPrefixedComponent("messages.no-permission"));
             soundHandler.playSound(player, "fail");
-            return;
+            return false;
         }
 
         // Calculate expected display size based on permission and item positions
@@ -440,6 +450,7 @@ public class EnderChestManager {
         player.openInventory(inv);
         openInventories.put(player.getUniqueId(), inv); // Start tracking this inventory
         soundHandler.playSound(player, "open");
+        return true;
     }
 
     private static int getExpectedDisplaySize(Inventory inv, int permissionSize) {
@@ -629,9 +640,9 @@ public class EnderChestManager {
         for (Map.Entry<UUID, Inventory> entry : cacheSnapshot) {
             UUID uuid = entry.getKey();
 
-            // Skip if data is locked (being processed elsewhere)
-            if (dataLockManager.isLocked(uuid)) {
-                plugin.getDebugLogger().log("Skipping auto-save for " + uuid + " - data is locked");
+            // Skip if data is locked (being processed elsewhere) or lock acquisition fails
+            if (!dataLockManager.lock(uuid)) {
+                plugin.getDebugLogger().log("Skipping auto-save for " + uuid + " - failed to acquire lock");
                 continue;
             }
 
@@ -641,6 +652,7 @@ public class EnderChestManager {
             // Offline players' data was already saved on quit, don't overwrite
             if (p == null || !p.isOnline()) {
                 plugin.getDebugLogger().log("Skipping auto-save for " + uuid + " - player is offline");
+                dataLockManager.unlock(uuid);
                 continue;
             }
 
@@ -656,6 +668,7 @@ public class EnderChestManager {
                 Scheduler.runEntityTask(p, () -> {
                     // Now we're on the correct region thread for this player
                     if (!finalPlayer.isOnline()) {
+                        dataLockManager.unlock(uuid);
                         future.complete(null);
                         return;
                     }
@@ -669,6 +682,7 @@ public class EnderChestManager {
                                 } else {
                                     plugin.getDebugLogger().log("Auto-saved data for " + name);
                                 }
+                                dataLockManager.unlock(uuid);
                                 future.complete(null);
                             });
                 });
@@ -676,9 +690,13 @@ public class EnderChestManager {
             } else {
                 // On non-Folia servers, we can safely access inventory from async thread
                 CompletableFuture<Void> future = saveEnderChest(uuid, name, inv)
-                        .exceptionally(ex -> {
-                            plugin.getLogger().warning("Failed to auto-save data for " + name + ": " + ex.getMessage());
-                            return null;
+                        .whenComplete((result, ex) -> {
+                            if (ex != null) {
+                                plugin.getLogger().warning("Failed to auto-save data for " + name + ": " + ex.getMessage());
+                            } else {
+                                plugin.getDebugLogger().log("Auto-saved data for " + name);
+                            }
+                            dataLockManager.unlock(uuid);
                         });
                 futures.add(future);
             }
@@ -795,6 +813,11 @@ public class EnderChestManager {
                 continue;
             }
 
+            // Skip checking/resizing if player data is currently locked (loading or saving)
+            if (dataLockManager.isLocked(uuid)) {
+                continue;
+            }
+
             // IMPORTANT: Only check if we need to resize, don't resize while player is
             // actively using inventory
             // This prevents race conditions and item duplication
@@ -814,6 +837,12 @@ public class EnderChestManager {
             // Only resize if there's an actual mismatch and permission changed significantly
             // CRITICAL: Add extra check to prevent rapid resize loops
             if (sizeMismatched || titleMismatched) {
+                // Acquire lock to prevent concurrent database operations during resize
+                if (!dataLockManager.lock(uuid)) {
+                    plugin.getDebugLogger().log("Skipping resize for " + player.getName() + " - failed to acquire data lock");
+                    continue;
+                }
+
                 // Log at INFO level so admins can see this without debug mode
                 plugin.getLogger().info("[Resize] Permission/title change detected for " + player.getName() +
                         " (size: " + openInv.getSize() + " -> " + currentPermissionSize +
@@ -845,12 +874,15 @@ public class EnderChestManager {
                 // Save the resized inventory immediately to prevent data loss (async,
                 // non-blocking)
                 saveEnderChest(uuid, player.getName(), resizedInv)
-                        .exceptionally(ex -> {
-                            plugin.getLogger().warning("Failed to save resized inventory for " + player.getName() + ": "
-                                    + ex.getMessage());
-                            return null;
-                        })
-                        .thenRun(() -> plugin.getDebugLogger().log("Saved resized inventory for " + player.getName()));
+                        .whenComplete((result, ex) -> {
+                            if (ex != null) {
+                                plugin.getLogger().warning("Failed to save resized inventory for " + player.getName() + ": "
+                                        + ex.getMessage());
+                            } else {
+                                plugin.getDebugLogger().log("Saved resized inventory for " + player.getName());
+                            }
+                            dataLockManager.unlock(uuid);
+                        });
 
                 // Use a delayed task to prevent issues with immediate reopening
                 Scheduler.runTaskLater(() -> {
