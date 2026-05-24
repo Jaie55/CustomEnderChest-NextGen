@@ -6,7 +6,7 @@ website: https://maiminhdung.dev/
 load: STARTUP
 api-version: 1.21
 folia-supported: true
-softdepend: [NBTAPI]
+softdepend: [NBTAPI, packetevents]
 commands:
   customenderchest:
     description: Main command for CustomEnderChest.

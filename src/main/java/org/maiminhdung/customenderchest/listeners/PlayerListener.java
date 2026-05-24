@@ -2,6 +2,7 @@ package org.maiminhdung.customenderchest.listeners;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -20,13 +21,23 @@ import org.maiminhdung.customenderchest.data.EnderChestManager;
 import org.maiminhdung.customenderchest.locale.LocaleManager;
 import org.maiminhdung.customenderchest.utils.DataLockManager;
 import org.maiminhdung.customenderchest.utils.DebugLogger;
+import org.maiminhdung.customenderchest.utils.EnderChestAnimation;
 
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class PlayerListener implements Listener {
 
     private final EnderChest plugin;
     private final DebugLogger debug;
+    
+    /**
+     * Tracks which enderchest block each player interacted with.
+     * Used to play the close animation when the inventory is closed.
+     * Only populated when player opens via block click (not command).
+     */
+    private final Map<UUID, Block> playerEnderChestBlocks = new ConcurrentHashMap<>();
 
     public PlayerListener(EnderChest plugin) {
         this.plugin = plugin;
@@ -42,6 +53,8 @@ public class PlayerListener implements Listener {
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         plugin.getEnderChestManager().onPlayerQuit(event.getPlayer());
+        // Clean up block tracking
+        playerEnderChestBlocks.remove(event.getPlayer().getUniqueId());
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -76,6 +89,14 @@ public class PlayerListener implements Listener {
         if (isMigrating(player)) {
             return;
         }
+
+        // Store the clicked block for animation tracking
+        Block clickedBlock = event.getClickedBlock();
+        playerEnderChestBlocks.put(player.getUniqueId(), clickedBlock);
+
+        // Send open animation BEFORE opening the inventory
+        // This matches vanilla behavior where animation plays first
+        EnderChestAnimation.playOpenAnimation(player, clickedBlock);
 
         // Let the EnderChestManager handle the permission check logic now
         plugin.getEnderChestManager().openEnderChest(player);
@@ -254,6 +275,12 @@ public class PlayerListener implements Listener {
         Inventory cachedInv = manager.getLoadedEnderChest(player.getUniqueId());
         if (closedInventory.equals(cachedInv)) {
             plugin.getSoundHandler().playSound(player, "close");
+
+            // Send close animation if player opened via block click
+            Block enderChestBlock = playerEnderChestBlocks.remove(player.getUniqueId());
+            if (enderChestBlock != null) {
+                EnderChestAnimation.playCloseAnimation(player, enderChestBlock);
+            }
 
             // Save data immediately when player closes their ender chest to prevent data
             // loss
