@@ -215,6 +215,26 @@ public class YmlStorage implements StorageInterface {
     }
 
     @Override
+    public CompletableFuture<Long> getOverflowCreatedAt(UUID playerUUID) {
+        return CompletableFuture.supplyAsync(() -> {
+            File playerFile = getPlayerFile(playerUUID);
+            if (!playerFile.exists()) return null;
+
+            YamlConfiguration config = new YamlConfiguration();
+            try {
+                config.load(playerFile);
+            } catch (Exception e) {
+                return null;
+            }
+
+            if (config.contains("overflow-created-at")) {
+                return config.getLong("overflow-created-at");
+            }
+            return null;
+        }, ioExecutor);
+    }
+
+    @Override
     public CompletableFuture<Boolean> hasData(UUID playerUUID) {
         return CompletableFuture.supplyAsync(() -> {
             File playerFile = getPlayerFile(playerUUID);

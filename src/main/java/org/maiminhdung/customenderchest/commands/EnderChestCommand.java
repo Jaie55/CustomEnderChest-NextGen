@@ -95,6 +95,9 @@ public final class EnderChestCommand implements CommandExecutor, TabCompleter {
             case "migrate":
                 handleMigrate(sender, args);
                 break;
+            case "overflow":
+                handleOverflow(sender, args);
+                break;
             default:
                 return handleDefaultCommand(sender);
         }
@@ -249,6 +252,9 @@ public final class EnderChestCommand implements CommandExecutor, TabCompleter {
         plugin.config().reload();
         plugin.getLocaleManager().loadLocale();
         plugin.getDebugLogger().reload();
+        if (plugin.getOverflowManager() != null) {
+            plugin.getOverflowManager().reloadConfig();
+        }
         sender.sendMessage(plugin.getLocaleManager().getPrefixedComponent("messages.reload-success"));
     }
 
@@ -460,11 +466,51 @@ public final class EnderChestCommand implements CommandExecutor, TabCompleter {
         migrationManager.startMigration(sender, sourceType, targetType);
     }
 
+    /**
+     * Handle /cec overflow [player] command
+     * Opens own overflow GUI or another player's overflow (admin)
+     */
+    private void handleOverflow(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player p)) {
+            sender.sendMessage(plugin.getLocaleManager().getComponent("messages.players-only"));
+            return;
+        }
+
+        // /cec overflow - open own overflow
+        if (args.length == 1) {
+            if (!p.isOp() && !p.hasPermission("CustomEnderChest.command.overflow")) {
+                p.sendMessage(plugin.getLocaleManager().getPrefixedComponent("messages.no-permission"));
+                return;
+            }
+            if (migrationManager.isMigrating()) {
+                p.sendMessage(plugin.getLocaleManager().getPrefixedComponent("command.migrate-in-progress"));
+                return;
+            }
+            manager.openOverflowGUI(p);
+            return;
+        }
+
+        // /cec overflow <player> - admin view of another player's overflow
+        if (args.length >= 2) {
+            if (!p.isOp() && !p.hasPermission("CustomEnderChest.command.overflow.other")) {
+                p.sendMessage(plugin.getLocaleManager().getPrefixedComponent("messages.no-permission"));
+                return;
+            }
+            String targetName = args[1].trim();
+            if (targetName.isEmpty()) {
+                p.sendMessage(plugin.getLocaleManager().getPrefixedComponent("messages.invalid-player"));
+                return;
+            }
+            manager.openAdminOverflowGUI(p, targetName);
+        }
+    }
+
     @Override
     public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, @NotNull String[] args) {
         if (args.length == 1) {
             List<String> completions = new ArrayList<>();
             if (sender.hasPermission("CustomEnderChest.command.open.self")) completions.add("open");
+            if (sender.hasPermission("CustomEnderChest.command.overflow")) completions.add("overflow");
             if (sender.hasPermission("CustomEnderChest.admin")) {
                 completions.add("reload");
                 completions.add("import");
@@ -472,6 +518,7 @@ public final class EnderChestCommand implements CommandExecutor, TabCompleter {
                 completions.add("migrate");
                 completions.add("stats");
                 completions.add("open");
+                completions.add("overflow");
             }
             return completions.stream()
                     .filter(s -> s.toLowerCase().startsWith(args[0].toLowerCase()))
@@ -481,6 +528,11 @@ public final class EnderChestCommand implements CommandExecutor, TabCompleter {
             if (args[0].equalsIgnoreCase("open") || args[0].equalsIgnoreCase("delete")) {
                 if (sender.hasPermission("CustomEnderChest.command.open.other")) {
                     return null;
+                }
+            }
+            if (args[0].equalsIgnoreCase("overflow")) {
+                if (sender.hasPermission("CustomEnderChest.command.overflow.other")) {
+                    return null; // Return online player names
                 }
             }
             if (args[0].equalsIgnoreCase("migrate") && sender.hasPermission("CustomEnderChest.admin")) {

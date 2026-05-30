@@ -20,6 +20,7 @@ import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.event.inventory.InventoryClickEvent;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -42,6 +43,10 @@ public class EnderChestManager {
     private final Map<Inventory, UUID> adminViewedChests = new ConcurrentHashMap<>();
     @Getter
     private final Map<UUID, Inventory> openInventories = new ConcurrentHashMap<>();
+    @Getter
+    private final Map<Inventory, Boolean> overflowInventories = new ConcurrentHashMap<>(); // true = admin view
+    private final Map<UUID, List<ItemStack>> activeOverflowItems = new ConcurrentHashMap<>();
+    private final Map<UUID, CompletableFuture<Void>> pendingSaves = new ConcurrentHashMap<>();
     private final Set<UUID> resizingPlayers = ConcurrentHashMap.newKeySet();
     private final Set<UUID> notifiedOverflowPlayers = ConcurrentHashMap.newKeySet();
     private final Map<UUID, Long> resizeCooldowns = new ConcurrentHashMap<>();
@@ -273,6 +278,11 @@ public class EnderChestManager {
                             if (plugin.getMetricsDataProvider() != null) {
                                 plugin.getMetricsDataProvider().recordLoad();
                             }
+
+                            // Send overflow login warning (async, non-blocking)
+                            if (plugin.getOverflowManager() != null) {
+                                plugin.getOverflowManager().sendLoginWarning(player);
+                            }
                         } finally {
                             dataLockManager.unlock(player.getUniqueId());
                             plugin.getDebugLogger().log("Data lock released for " + player.getName());
@@ -332,6 +342,11 @@ public class EnderChestManager {
         resizingPlayers.remove(playerUuid);
         resizeCooldowns.remove(playerUuid);
         notifiedOverflowPlayers.remove(playerUuid);
+
+        // Clear overflow login warning flag
+        if (plugin.getOverflowManager() != null) {
+            plugin.getOverflowManager().clearWarnedFlag(playerUuid);
+        }
 
         final String playerName = player.getName();
 
@@ -409,8 +424,16 @@ public class EnderChestManager {
             return false;
         }
 
+        UUID uuid = player.getUniqueId();
+        CompletableFuture<Void> pendingSave = pendingSaves.get(uuid);
+        if (pendingSave != null && !pendingSave.isDone()) {
+            plugin.getDebugLogger().log("Waiting for pending saves before opening Ender Chest for " + player.getName());
+            pendingSave.thenRun(() -> Scheduler.runEntityTask(player, () -> openEnderChest(player)));
+            return true;
+        }
+
         // Check if data is currently being loaded to prevent loops
-        if (dataLockManager.isLocked(player.getUniqueId())) {
+        if (dataLockManager.isLocked(uuid)) {
             player.sendMessage(plugin.getLocaleManager().getPrefixedComponent("messages.data-still-loading"));
             return false;
         }
@@ -437,6 +460,14 @@ public class EnderChestManager {
             player.sendMessage(plugin.getLocaleManager().getPrefixedComponent("messages.no-permission"));
             soundHandler.playSound(player, "fail");
             return false;
+        }
+
+        // If there's an upgrade, run checkForUpgradeAndRestore first!
+        if (permissionSize > inv.getSize()) {
+            checkForUpgradeAndRestore(player).thenRun(() -> {
+                Scheduler.runEntityTask(player, () -> openEnderChest(player));
+            });
+            return true;
         }
 
         // Calculate expected display size based on permission and item positions
@@ -541,64 +572,156 @@ public class EnderChestManager {
                                     }
                                 });
                     });
-        } else {
-            // Try to restore overflow items if player has enough space now
-            restoreOverflowItems(player, newInv);
         }
-
         plugin.getDebugLogger().log("Resize complete. New inventory size: " + newInv.getSize() + ", Overflow items: "
                 + overflowItems.size());
         return newInv;
     }
 
-    // Restore overflow items when player gains more space
-    private void restoreOverflowItems(Player player, Inventory inv) {
-        plugin.getStorageManager().getStorage().loadOverflowItems(player.getUniqueId())
+    /**
+     * Track a pending database save operation for a player.
+     */
+    private void trackPendingSave(UUID uuid, CompletableFuture<Void> future) {
+        pendingSaves.compute(uuid, (k, oldFuture) -> {
+            if (oldFuture == null || oldFuture.isDone()) {
+                return future;
+            } else {
+                return CompletableFuture.allOf(oldFuture, future);
+            }
+        });
+    }
+
+    /**
+     * Check if the player's permission size is upgraded compared to their currently loaded Ender Chest size.
+     * If upgraded, resizes the chest and automatically restores overflow items.
+     */
+    public CompletableFuture<Void> checkForUpgradeAndRestore(Player player) {
+        if (player == null || !player.isOnline()) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        UUID uuid = player.getUniqueId();
+        if (resizingPlayers.contains(uuid)) {
+            // Already checking/resizing
+            return CompletableFuture.completedFuture(null);
+        }
+
+        int permissionSize = EnderChestUtils.getSize(player);
+        Inventory loadedChest = liveData.getIfPresent(uuid);
+
+        if (loadedChest != null && permissionSize > loadedChest.getSize()) {
+            resizingPlayers.add(uuid);
+            plugin.getDebugLogger().log("Upgrade detected for " + player.getName() + " (Permission size: " + permissionSize + " > Loaded: " + loadedChest.getSize() + "). Resizing and restoring...");
+            Inventory newInv = resizeInventory(player, loadedChest, permissionSize);
+            liveData.put(uuid, newInv);
+            CompletableFuture<Void> overallFuture = restoreOverflowToEnderChest(player, newInv);
+            trackPendingSave(uuid, overallFuture);
+            return overallFuture.whenComplete((v, ex) -> resizingPlayers.remove(uuid));
+        }
+
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * Restores overflow items directly to the newly upgraded slots of the player's Ender Chest.
+     */
+    private CompletableFuture<Void> restoreOverflowToEnderChest(Player player, Inventory inv) {
+        UUID uuid = player.getUniqueId();
+        CompletableFuture<Void> overallFuture = new CompletableFuture<>();
+
+        plugin.getStorageManager().getStorage().loadOverflowItems(uuid)
                 .thenAccept(overflowItems -> {
                     if (overflowItems == null || overflowItems.length == 0) {
+                        overallFuture.complete(null);
                         return;
                     }
 
                     Scheduler.runEntityTask(player, () -> {
+                        if (!player.isOnline()) {
+                            overallFuture.complete(null);
+                            return;
+                        }
+
                         List<ItemStack> remainingOverflow = new ArrayList<>();
-                        final List<ItemStack> restoredItems = new ArrayList<>();
+                        List<ItemStack> restoredItems = new ArrayList<>();
 
                         for (ItemStack item : overflowItems) {
                             if (item == null || item.getType() == Material.AIR)
                                 continue;
 
-                            // Try to add item to inventory
+                            // Try to add item to Ender Chest (inv)
                             if (inv.firstEmpty() != -1) {
                                 inv.addItem(item);
                                 restoredItems.add(item);
-                                plugin.getDebugLogger()
-                                        .log("Restored overflow item " + item.getType() + " to " + player.getName());
+                                plugin.getDebugLogger().log("Restored overflow item " + item.getType() + " to " + player.getName() + "'s Ender Chest due to upgrade.");
                             } else {
                                 remainingOverflow.add(item);
                             }
                         }
 
                         final int count = restoredItems.size();
+                        CompletableFuture<Void> chestSaveFuture;
                         if (count > 0) {
-                            // Update cache
-                            liveData.put(player.getUniqueId(), inv);
-
                             LocaleManager locale = plugin.getLocaleManager();
                             player.sendMessage(locale.getPrefixedComponent("messages.overflow-items-restored")
                                     .replaceText(builder -> builder.matchLiteral("<count>")
                                             .replacement(String.valueOf(count))));
+                            
+                            // Save the updated Ender Chest immediately
+                            chestSaveFuture = saveEnderChest(uuid, player.getName(), inv);
+                        } else {
+                            chestSaveFuture = CompletableFuture.completedFuture(null);
                         }
 
-                        // Update or clear overflow storage
-                        if (remainingOverflow.isEmpty()) {
-                            plugin.getStorageManager().getStorage().clearOverflowItems(player.getUniqueId());
-                            notifiedOverflowPlayers.remove(player.getUniqueId());
-                        } else {
-                            ItemStack[] remaining = remainingOverflow.toArray(new ItemStack[0]);
-                            plugin.getStorageManager().getStorage().saveOverflowItems(player.getUniqueId(), remaining);
-                        }
+                        chestSaveFuture.thenCompose(v -> {
+                            // Update or clear overflow storage
+                            CompletableFuture<Void> saveFuture;
+                            ItemStack[] remainingArray = remainingOverflow.toArray(new ItemStack[0]);
+                            if (remainingOverflow.isEmpty()) {
+                                saveFuture = plugin.getStorageManager().getStorage().clearOverflowItems(uuid);
+                                notifiedOverflowPlayers.remove(uuid);
+                            } else {
+                                saveFuture = plugin.getStorageManager().getStorage().saveOverflowItems(uuid, remainingArray);
+                            }
+                            return saveFuture;
+                        }).thenRun(() -> {
+                            // Sync the in-memory activeOverflowItems
+                            if (activeOverflowItems.containsKey(uuid)) {
+                                activeOverflowItems.put(uuid, remainingOverflow);
+                                
+                                // If they have the overflow GUI open, refresh/sync the slots
+                                Scheduler.runEntityTask(player, () -> {
+                                    Inventory openInv = player.getOpenInventory().getTopInventory();
+                                    if (overflowInventories.containsKey(openInv)) {
+                                        if (remainingOverflow.isEmpty()) {
+                                            player.closeInventory();
+                                            player.sendMessage(plugin.getLocaleManager().getPrefixedComponent("command.overflow-empty"));
+                                        } else {
+                                            // Clear and refresh GUI slots
+                                            openInv.clear();
+                                            for (int i = 0; i < Math.min(remainingOverflow.size(), openInv.getSize()); i++) {
+                                                openInv.setItem(i, remainingOverflow.get(i));
+                                            }
+                                        }
+                                    }
+                                    overallFuture.complete(null);
+                                });
+                            } else {
+                                overallFuture.complete(null);
+                            }
+                        }).exceptionally(ex -> {
+                            ERROR_TRACKER.trackError(ex);
+                            overallFuture.completeExceptionally(ex);
+                            return null;
+                        });
                     });
+                }).exceptionally(ex -> {
+                    ERROR_TRACKER.trackError(ex);
+                    overallFuture.completeExceptionally(ex);
+                    return null;
                 });
+
+        return overallFuture;
     }
 
     // Force-save all cached data during server shutdown to prevent data loss.
@@ -754,8 +877,10 @@ public class EnderChestManager {
     // Save ender chest data with specified size and items, used for offline
     // players.
     public CompletableFuture<Void> saveEnderChest(UUID uuid, String playerName, int size, ItemStack[] items) {
-        return plugin.getStorageManager().getStorage().saveEnderChest(uuid, playerName, size, items)
+        CompletableFuture<Void> future = plugin.getStorageManager().getStorage().saveEnderChest(uuid, playerName, size, items)
                 .orTimeout(15, TimeUnit.SECONDS);
+        trackPendingSave(uuid, future);
+        return future;
     }
 
     // Get the cached inventory for a player, or null if not loaded.
@@ -848,8 +973,7 @@ public class EnderChestManager {
                         " (size: " + openInv.getSize() + " -> " + currentPermissionSize +
                         ", titleMismatch: " + titleMismatched + "). Triggering inventory refresh.");
 
-                // Mark as resizing and set cooldown to prevent rapid loops
-                resizingPlayers.add(uuid);
+                // Mark set cooldown to prevent rapid loops
                 resizeCooldowns.put(uuid, System.currentTimeMillis());
 
                 // Remove from tracking first to prevent loops
@@ -866,36 +990,56 @@ public class EnderChestManager {
                 // Close current inventory
                 player.closeInventory();
 
-                // Resize the inventory and update cache
-                Inventory resizedInv = resizeInventory(player, cachedInv, currentPermissionSize);
-                liveData.put(uuid, resizedInv);
-                plugin.getDebugLogger().log("Resized inventory cached. New size: " + resizedInv.getSize());
-
-                // Save the resized inventory immediately to prevent data loss (async,
-                // non-blocking)
-                saveEnderChest(uuid, player.getName(), resizedInv)
-                        .whenComplete((result, ex) -> {
-                            if (ex != null) {
-                                plugin.getLogger().warning("Failed to save resized inventory for " + player.getName() + ": "
-                                        + ex.getMessage());
-                            } else {
-                                plugin.getDebugLogger().log("Saved resized inventory for " + player.getName());
+                if (currentPermissionSize > cachedInv.getSize()) {
+                    // This is an upgrade! Run upgrade restore process
+                    checkForUpgradeAndRestore(player).whenComplete((v, ex) -> {
+                        dataLockManager.unlock(uuid);
+                    }).thenRun(() -> {
+                        Scheduler.runEntityTask(player, () -> {
+                            if (player.isOnline()) {
+                                Inventory newResized = getLoadedEnderChest(uuid);
+                                player.openInventory(newResized);
+                                openInventories.put(uuid, newResized);
+                                soundHandler.playSound(player, "open");
+                                player.setItemOnCursor(cursorItem);
                             }
-                            dataLockManager.unlock(uuid);
                         });
+                    });
+                } else {
+                    // Just a title change or downgrade:
+                    // Mark as resizing for the duration of this task
+                    resizingPlayers.add(uuid);
 
-                // Use a delayed task to prevent issues with immediate reopening
-                Scheduler.runTaskLater(() -> {
-                    if (player.isOnline()) {
-                        player.openInventory(resizedInv);
-                        openInventories.put(uuid, resizedInv);
-                        soundHandler.playSound(player, "open");
-                        player.setItemOnCursor(cursorItem);
-                    }
+                    // Resize the inventory and update cache
+                    Inventory resizedInv = resizeInventory(player, cachedInv, currentPermissionSize);
+                    liveData.put(uuid, resizedInv);
+                    plugin.getDebugLogger().log("Resized inventory cached. New size: " + resizedInv.getSize());
 
-                    // Clear resizing flag AFTER reopening
-                    Scheduler.runTaskLater(() -> resizingPlayers.remove(uuid), 5L);
-                }, 2L); // Wait 2 ticks before reopening
+                    // Save the resized inventory immediately to prevent data loss (async, non-blocking)
+                    saveEnderChest(uuid, player.getName(), resizedInv)
+                            .whenComplete((result, ex) -> {
+                                if (ex != null) {
+                                    plugin.getLogger().warning("Failed to save resized inventory for " + player.getName() + ": "
+                                            + ex.getMessage());
+                                } else {
+                                    plugin.getDebugLogger().log("Saved resized inventory for " + player.getName());
+                                }
+                                dataLockManager.unlock(uuid);
+                            });
+
+                    // Use a delayed task to prevent issues with immediate reopening
+                    Scheduler.runTaskLater(() -> {
+                        if (player.isOnline()) {
+                            player.openInventory(resizedInv);
+                            openInventories.put(uuid, resizedInv);
+                            soundHandler.playSound(player, "open");
+                            player.setItemOnCursor(cursorItem);
+                        }
+
+                        // Clear resizing flag AFTER reopening
+                        Scheduler.runTaskLater(() -> resizingPlayers.remove(uuid), 5L);
+                    }, 2L); // Wait 2 ticks before reopening
+                }
             }
         }
     }
@@ -941,5 +1085,321 @@ public class EnderChestManager {
 
         liveData.put(player.getUniqueId(), newInv);
         plugin.getDebugLogger().log("Cache updated with items for player " + player.getName());
+    }
+
+    // ==================== Overflow GUI ====================
+
+    /**
+     * Open the overflow GUI for a player showing their own overflow items.
+     * Player can click items to claim them (with fee check).
+     */
+    public void openOverflowGUI(Player player) {
+        if (player == null || !player.isOnline()) return;
+
+        UUID uuid = player.getUniqueId();
+        CompletableFuture<Void> pendingSave = pendingSaves.get(uuid);
+        if (pendingSave != null && !pendingSave.isDone()) {
+            plugin.getDebugLogger().log("Waiting for pending saves before opening overflow GUI for " + player.getName());
+            pendingSave.thenRun(() -> Scheduler.runEntityTask(player, () -> openOverflowGUI(player)));
+            return;
+        }
+
+        checkForUpgradeAndRestore(player).thenRun(() -> {
+            plugin.getStorageManager().getStorage().loadOverflowItems(player.getUniqueId())
+                    .thenAccept(overflowItems -> {
+                        Scheduler.runEntityTask(player, () -> {
+                            if (!player.isOnline()) return;
+
+                            if (overflowItems == null || overflowItems.length == 0) {
+                                player.sendMessage(plugin.getLocaleManager().getPrefixedComponent("command.overflow-empty"));
+                                return;
+                            }
+
+                        // Filter out null/air items
+                        java.util.List<ItemStack> validItems = new java.util.ArrayList<>();
+                        for (ItemStack item : overflowItems) {
+                            if (item != null && item.getType() != Material.AIR) {
+                                validItems.add(item);
+                            }
+                        }
+
+                        if (validItems.isEmpty()) {
+                            player.sendMessage(plugin.getLocaleManager().getPrefixedComponent("command.overflow-empty"));
+                            return;
+                        }
+
+                        // Calculate inventory size (rows of 9, minimum 9, max 54)
+                        int invSize = Math.min(54, Math.max(9, (int) Math.ceil(validItems.size() / 9.0) * 9));
+
+                        // Create title
+                        Component title = plugin.getLocaleManager().getComponent("command.overflow-title",
+                                net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.unparsed("player", player.getName()));
+
+                        Inventory overflowInv = Bukkit.createInventory(player, invSize, title);
+
+                        // Fill inventory with overflow items
+                        for (int i = 0; i < Math.min(validItems.size(), invSize); i++) {
+                            overflowInv.setItem(i, validItems.get(i));
+                        }
+
+                        // Track as overflow inventory (not admin)
+                        overflowInventories.put(overflowInv, false);
+                        activeOverflowItems.put(player.getUniqueId(), validItems);
+
+                        player.openInventory(overflowInv);
+                        plugin.getSoundHandler().playSound(player, "open");
+                        });
+                    }).exceptionally(ex -> {
+                        ERROR_TRACKER.trackError(ex);
+                        player.sendMessage(plugin.getLocaleManager().getPrefixedComponent("messages.save-error"));
+                        return null;
+                    });
+        })
+        .exceptionally(ex -> {
+            ERROR_TRACKER.trackError(ex);
+            player.sendMessage(plugin.getLocaleManager().getPrefixedComponent("messages.save-error"));
+            return null;
+        });
+    }
+
+    /**
+     * Open the overflow GUI for admin viewing another player's overflow.
+     * Admin cannot take items - read-only view.
+     */
+    public void openAdminOverflowGUI(Player admin, String targetName) {
+        if (admin == null || !admin.isOnline()) return;
+
+        // Try online player first
+        Player targetOnline = Bukkit.getPlayerExact(targetName);
+        UUID targetUUID;
+        String displayName;
+
+        if (targetOnline != null) {
+            targetUUID = targetOnline.getUniqueId();
+            displayName = targetOnline.getName();
+        } else {
+            // Try offline player
+            org.bukkit.OfflinePlayer target = Bukkit.getOfflinePlayer(targetName);
+            if (!target.hasPlayedBefore()) {
+                admin.sendMessage(plugin.getLocaleManager().getPrefixedComponent("command.player-not-found",
+                        net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.unparsed("player", targetName)));
+                return;
+            }
+            targetUUID = target.getUniqueId();
+            displayName = target.getName() != null ? target.getName() : targetName;
+        }
+
+        String finalDisplayName = displayName;
+        plugin.getStorageManager().getStorage().loadOverflowItems(targetUUID)
+                .thenAccept(overflowItems -> {
+                    Scheduler.runEntityTask(admin, () -> {
+                        if (!admin.isOnline()) return;
+
+                        if (overflowItems == null || overflowItems.length == 0) {
+                            admin.sendMessage(plugin.getLocaleManager().getPrefixedComponent("command.overflow-admin-empty",
+                                    net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.unparsed("player", finalDisplayName)));
+                            return;
+                        }
+
+                        // Filter out null/air items
+                        java.util.List<ItemStack> validItems = new java.util.ArrayList<>();
+                        for (ItemStack item : overflowItems) {
+                            if (item != null && item.getType() != Material.AIR) {
+                                validItems.add(item);
+                            }
+                        }
+
+                        if (validItems.isEmpty()) {
+                            admin.sendMessage(plugin.getLocaleManager().getPrefixedComponent("command.overflow-admin-empty",
+                                    net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.unparsed("player", finalDisplayName)));
+                            return;
+                        }
+
+                        int invSize = Math.min(54, Math.max(9, (int) Math.ceil(validItems.size() / 9.0) * 9));
+
+                        Component title = plugin.getLocaleManager().getComponent("command.overflow-admin-title",
+                                net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.unparsed("player", finalDisplayName));
+
+                        Inventory overflowInv = Bukkit.createInventory(admin, invSize, title);
+
+                        for (int i = 0; i < Math.min(validItems.size(), invSize); i++) {
+                            overflowInv.setItem(i, validItems.get(i));
+                        }
+
+                        // Track as admin overflow view
+                        overflowInventories.put(overflowInv, true);
+
+                        admin.openInventory(overflowInv);
+                        plugin.getSoundHandler().playSound(admin, "open");
+                    });
+                }).exceptionally(ex -> {
+                    ERROR_TRACKER.trackError(ex);
+                    admin.sendMessage(plugin.getLocaleManager().getPrefixedComponent("messages.save-error"));
+                    return null;
+                });
+    }
+
+    /**
+     * Handle a click in an overflow inventory.
+     * For own overflow: move clicked item to enderchest/inventory, charge fee.
+     * For admin overflow: cancel the click (read-only).
+     *
+     * @return true if this was an overflow click (event should be cancelled), false otherwise
+     */
+    public boolean handleOverflowClick(Player player, Inventory clickedInv, InventoryClickEvent event) {
+        Boolean isAdminView = overflowInventories.get(clickedInv);
+        if (isAdminView == null) return false; // Not an overflow inventory
+
+        // Always cancel the click first
+        event.setCancelled(true);
+
+        // Admin view is read-only
+        if (isAdminView) {
+            return true;
+        }
+
+        // Own overflow - claim the clicked item
+        ItemStack clickedItem = event.getCurrentItem();
+        if (clickedItem == null || clickedItem.getType() == Material.AIR) {
+            return true;
+        }
+
+        UUID uuid = player.getUniqueId();
+        List<ItemStack> activeOverflowList = activeOverflowItems.get(uuid);
+        if (activeOverflowList == null) {
+            return true;
+        }
+
+        // Ensure player data is fully loaded
+        Inventory loadedChest = liveData.getIfPresent(uuid);
+        if (loadedChest == null) {
+            player.sendMessage(plugin.getLocaleManager().getPrefixedComponent("messages.data-still-loading"));
+            return true;
+        }
+
+        // Check if player permission size is upgraded
+        int permissionSize = EnderChestUtils.getSize(player);
+        if (permissionSize > loadedChest.getSize()) {
+            // Upgrade detected! Run the upgrade restore process and cancel the click
+            checkForUpgradeAndRestore(player);
+            return true;
+        }
+
+        // Clone the item to safely calculate fit space
+        ItemStack fitItem = clickedItem.clone();
+        int originalAmount = fitItem.getAmount();
+
+        // Calculate how much fits in player's inventory only
+        int totalFitAmount = calculateFitAmount(player.getInventory(), fitItem);
+        if (totalFitAmount <= 0) {
+            player.sendMessage(plugin.getLocaleManager().getPrefixedComponent("command.overflow-enderchest-full"));
+            return true;
+        }
+
+        // Charge retrieval fee if enabled
+        OverflowManager overflowMgr = plugin.getOverflowManager();
+        if (overflowMgr != null && overflowMgr.shouldChargeFee()) {
+            if (!overflowMgr.chargeRetrievalFee(player, totalFitAmount)) {
+                // Can't afford - don't claim
+                return true;
+            }
+        }
+
+        // Add to player's inventory
+        ItemStack toInventory = fitItem.clone();
+        toInventory.setAmount(totalFitAmount);
+        player.getInventory().addItem(toInventory);
+
+        // Update the GUI inventory slot
+        int newAmount = originalAmount - totalFitAmount;
+        if (newAmount <= 0) {
+            clickedInv.setItem(event.getSlot(), null);
+        } else {
+            ItemStack remainingGuiItem = clickedItem.clone();
+            remainingGuiItem.setAmount(newAmount);
+            clickedInv.setItem(event.getSlot(), remainingGuiItem);
+        }
+
+        // Update the in-memory active overflow list
+        for (int i = 0; i < activeOverflowList.size(); i++) {
+            ItemStack item = activeOverflowList.get(i);
+            if (item != null && item.isSimilar(clickedItem)) {
+                int listAmount = item.getAmount();
+                if (listAmount <= totalFitAmount) {
+                    activeOverflowList.remove(i);
+                    totalFitAmount -= listAmount;
+                    i--; // adjust index after removal
+                } else {
+                    item.setAmount(listAmount - totalFitAmount);
+                    totalFitAmount = 0;
+                }
+                if (totalFitAmount <= 0) {
+                    break;
+                }
+            }
+        }
+
+        player.sendMessage(plugin.getLocaleManager().getPrefixedComponent("command.overflow-claimed",
+                net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.unparsed("count", String.valueOf(originalAmount - newAmount))));
+
+        return true;
+    }
+
+    /**
+     * Calculate how many items of a given ItemStack can fit in the storage contents of an inventory.
+     */
+    private int calculateFitAmount(Inventory inv, ItemStack item) {
+        int maxStack = item.getMaxStackSize();
+        int space = 0;
+        for (ItemStack slotItem : inv.getStorageContents()) {
+            if (slotItem == null || slotItem.getType() == Material.AIR) {
+                space += maxStack;
+            } else if (slotItem.isSimilar(item)) {
+                space += Math.max(0, maxStack - slotItem.getAmount());
+            }
+        }
+        return Math.min(item.getAmount(), space);
+    }
+
+    /**
+     * Handle overflow inventory close - clean up tracking and save player data.
+     */
+    public void handleOverflowClose(Player player, Inventory closedInv) {
+        overflowInventories.remove(closedInv);
+        UUID uuid = player.getUniqueId();
+        List<ItemStack> remaining = activeOverflowItems.remove(uuid);
+        if (remaining != null) {
+            // Save remaining overflow items to storage
+            // Filter out null/air items
+            List<ItemStack> cleanRemaining = new ArrayList<>();
+            for (ItemStack item : remaining) {
+                if (item != null && item.getType() != Material.AIR) {
+                    cleanRemaining.add(item);
+                }
+            }
+
+            CompletableFuture<Void> saveFuture;
+            if (cleanRemaining.isEmpty()) {
+                saveFuture = plugin.getStorageManager().getStorage().clearOverflowItems(uuid);
+            } else {
+                ItemStack[] arr = cleanRemaining.toArray(new ItemStack[0]);
+                saveFuture = plugin.getStorageManager().getStorage().saveOverflowItems(uuid, arr);
+            }
+            saveFuture.exceptionally(ex -> {
+                ERROR_TRACKER.trackError(ex);
+                return null;
+            });
+            trackPendingSave(uuid, saveFuture);
+
+            // Immediately save Ender Chest contents to database
+            Inventory enderchestInv = liveData.getIfPresent(uuid);
+            if (enderchestInv != null) {
+                saveEnderChest(uuid, player.getName(), enderchestInv)
+                        .exceptionally(ex -> {
+                            ERROR_TRACKER.trackError(ex);
+                            return null;
+                        });
+            }
+        }
     }
 }

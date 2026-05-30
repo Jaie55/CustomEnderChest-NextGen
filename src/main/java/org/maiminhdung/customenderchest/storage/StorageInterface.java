@@ -40,6 +40,9 @@ public interface StorageInterface {
 
     CompletableFuture<Boolean> hasOverflowItems(UUID playerUUID);
 
+    // Get the timestamp when overflow items were created (for expiration)
+    CompletableFuture<Long> getOverflowCreatedAt(UUID playerUUID);
+
     // Statistics methods
     CompletableFuture<StorageStats> getStorageStats();
 

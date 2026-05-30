@@ -342,6 +342,27 @@ public class MySQLStorage implements StorageInterface {
     }
 
     @Override
+    public CompletableFuture<Long> getOverflowCreatedAt(UUID playerUUID) {
+        return CompletableFuture.supplyAsync(() -> {
+            String sql = "SELECT `created_at` FROM `" + tableName + "_overflow` WHERE `player_uuid` = ?";
+            try (Connection conn = storageManager.getConnection();
+                    PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setQueryTimeout(10);
+                ps.setString(1, playerUUID.toString());
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        return rs.getLong("created_at");
+                    }
+                }
+            } catch (Exception e) {
+                EnderChest.getInstance().getLogger().warning(
+                        "[MySQLStorage] Failed to get overflow created_at for " + playerUUID + ": " + e.getMessage());
+            }
+            return null;
+        }, ioExecutor);
+    }
+
+    @Override
     public CompletableFuture<Boolean> hasData(UUID playerUUID) {
         return CompletableFuture.supplyAsync(() -> {
             String sql = "SELECT 1 FROM `" + tableName + "` WHERE `player_uuid` = ? LIMIT 1";

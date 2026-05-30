@@ -82,6 +82,28 @@ storage:
   # Only enable this if your server move from offline server to online server or you know what you're doing.
   migrate-uuid-by-name: false
 
+# Overflow settings
+overflow:
+  # Expiration timer for overflow items
+  # If enabled, overflow items that are not claimed will be automatically deleted
+  expiration:
+    enabled: false
+    # Number of days before overflow items expire (default: 30)
+    days: 30
+    # How often to check for expired items (in minutes, default: 60)
+    check-interval-minutes: 60
+  # Warning shown to players on login if they have overflow items
+  login-warning:
+    enabled: true
+  # Retrieval fees (requires Vault)
+  # Charge players when they claim overflow items
+  retrieval-fee:
+    enabled: false
+    # Flat fee charged once when claiming any overflow items (default: 0)
+    flat-fee: 0
+    # Fee charged per item in overflow (default: 0)
+    per-item-fee: 0
+
 # Ender Chest gameplay options
 enderchest-options:
   # Disable opening the custom ender chest by right-clicking an Ender Chest block.

@@ -21,8 +21,14 @@ messages:
 
   # Overflow messages
   overflow-items-saved: "<yellow>⚠ Một số vật phẩm vượt quyền hạn đã được lưu vào kho dự phòng."
-  overflow-will-restore: "<gray>Chúng sẽ tự động được khôi phục khi bạn nâng cấp Rương Ender."
+  overflow-will-restore: "<gray>Chúng sẽ tự động được khôi phục khi bạn nâng cấp Rương Ender hoặc /ec overflow"
   overflow-items-restored: "<green>✓ Đã khôi phục <count> vật phẩm từ kho dự phòng!"
+  overflow-login-warning: "<yellow>⚠ Bạn có <count> vật phẩm trong kho dự phòng. Dùng <command> để nhận."
+  overflow-login-warning-expiring: "<yellow>⚠ Bạn có <count> vật phẩm trong kho dự phòng sẽ hết hạn sau <days> ngày! Dùng <command> để nhận."
+  overflow-expired: "<red>Vật phẩm dự phòng (<count> vật phẩm) đã hết hạn và bị xóa."
+  overflow-fee-charged: "<yellow>Đã trừ <amount> khi nhận <count> vật phẩm dự phòng."
+  overflow-fee-insufficient: "<red>Bạn cần ít nhất <amount> để nhận vật phẩm dự phòng. Số dư: <balance>"
+  overflow-fee-no-vault: "<red>Không tìm thấy plugin kinh tế (Vault). Phí nhận vật phẩm đã tắt."
 
 command:
   usage: "<red>Sử dụng: <gray>/<label> <usage>"
@@ -45,6 +51,14 @@ command:
   migrate-note: "<yellow>⚠ Lưu ý: <white>Sau khi chuyển đổi dữ liệu và muốn sử dụng dữ liệu đó thì hãy tắt máy chủ và chỉnh thông tin trong file config.yml rồi mở máy chủ để sử dụng."
   migrate-error-unknown: "<red>Đã xảy ra lỗi không xác định lúc chuyển dữ liệu. Xem Console để biết chi tiết."
   migrate-in-progress: "<red>Hệ thống đang bảo trì dữ liệu (migrate), không thể mở rương ngay lúc này!"
+  overflow-title: "<dark_purple>Rương dự phòng của <player>"
+  overflow-admin-title: "<dark_red>Admin Xem: <white><player> <dark_red>Dự phòng"
+  overflow-empty: "<green>Bạn không có vật phẩm nào trong kho dự phòng."
+  overflow-admin-empty: "<green><player> không có vật phẩm trong kho dự phòng."
+  overflow-no-enderchest: "<red>Bạn cần Rương Ender để nhận vật phẩm dự phòng."
+  overflow-claimed: "<green>✓ Đã nhận <count> vật phẩm từ kho dự phòng!"
+  overflow-enderchest-full: "<yellow>Hành trang của bạn đã đầy. Vật phẩm còn lại vẫn ở kho dự phòng."
+  overflow-claim-failed: "<red>Nhận vật phẩm dự phòng thất bại. Vui lòng thử lại."
 
 titles:
   enderchest: "<level> - <light_purple>Rương của <player>"

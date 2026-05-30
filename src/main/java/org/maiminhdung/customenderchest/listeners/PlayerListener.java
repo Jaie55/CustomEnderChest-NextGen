@@ -170,7 +170,14 @@ public class PlayerListener implements Listener {
         if (event.isCancelled())
             return;
 
-        syncInventoryChange(player, event.getInventory());
+        Inventory clickedInv = event.getInventory();
+
+        // Handle overflow inventory clicks first
+        if (plugin.getEnderChestManager().handleOverflowClick(player, clickedInv, event)) {
+            return; // Was an overflow click, already handled
+        }
+
+        syncInventoryChange(player, clickedInv);
     }
 
     // Handle inventory drag events (shift-click, drag multiple items, etc.)
@@ -242,6 +249,13 @@ public class PlayerListener implements Listener {
         LocaleManager localeManager = plugin.getLocaleManager();
 
         manager.getOpenInventories().remove(player.getUniqueId());
+
+        // Handle overflow inventory close
+        if (manager.getOverflowInventories().containsKey(closedInventory)) {
+            manager.handleOverflowClose(player, closedInventory);
+            plugin.getSoundHandler().playSound(player, "close");
+            return;
+        }
 
         if (manager.getAdminViewedChests().containsKey(closedInventory)) {
             UUID targetUUID = manager.getAdminViewedChests().remove(closedInventory);

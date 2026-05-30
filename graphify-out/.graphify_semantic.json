@@ -1,0 +1,498 @@
+{
+  "nodes": [
+    {
+      "id": "aicontext_architecture_doc",
+      "label": "AI Context Architecture Doc",
+      "file_type": "document",
+      "source_file": "AI_CONTEXT.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_project_overview",
+      "label": "README Project Overview",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "plugin_yml_metadata",
+      "label": "Plugin YAML Metadata",
+      "file_type": "document",
+      "source_file": "src/main/resources/plugin.yml",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "config_yml_settings",
+      "label": "Configuration Settings",
+      "file_type": "document",
+      "source_file": "src/main/resources/config.yml",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "gradle_build_ci",
+      "label": "Gradle Build CI Pipeline",
+      "file_type": "document",
+      "source_file": ".github/workflows/gradle-build.yml",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_permission_system",
+      "label": "Permission-Based Chest Sizing",
+      "file_type": "rationale",
+      "source_file": "src/main/resources/plugin.yml",
+      "source_location": "lines 16-52",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_async_persistence",
+      "label": "Async Data Persistence",
+      "file_type": "rationale",
+      "source_file": "AI_CONTEXT.md",
+      "source_location": "lines 46-53",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_folia_compatibility",
+      "label": "Folia/Canvas/Bukkit Compatibility",
+      "file_type": "rationale",
+      "source_file": "src/main/java/org/maiminhdung/customenderchest/Scheduler.java",
+      "source_location": "lines 14-49",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_storage_migration",
+      "label": "Storage Format Migration",
+      "file_type": "rationale",
+      "source_file": "AI_CONTEXT.md",
+      "source_location": "lines 106-113",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_overflow_items",
+      "label": "Overflow Item Storage",
+      "file_type": "rationale",
+      "source_file": "AI_CONTEXT.md",
+      "source_location": "lines 92-96",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_admin_view",
+      "label": "Admin Chest View/Edit",
+      "file_type": "rationale",
+      "source_file": "AI_CONTEXT.md",
+      "source_location": "lines 83-90",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_guava_cache",
+      "label": "Guava Cache for Live Data",
+      "file_type": "rationale",
+      "source_file": "src/main/java/org/maiminhdung/customenderchest/data/EnderChestManager.java",
+      "source_location": "lines 55-79",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_data_locking",
+      "label": "Per-Player Data Locking",
+      "file_type": "rationale",
+      "source_file": "src/main/java/org/maiminhdung/customenderchest/utils/DataLockManager.java",
+      "source_location": "lines 9-17",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_minimessage_text",
+      "label": "MiniMessage Text Rendering",
+      "file_type": "rationale",
+      "source_file": "src/main/java/org/maiminhdung/customenderchest/utils/Text.java",
+      "source_location": "lines 8-21",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_hikaricp_pooling",
+      "label": "HikariCP Connection Pooling",
+      "file_type": "rationale",
+      "source_file": "src/main/java/org/maiminhdung/customenderchest/storage/StorageManager.java",
+      "source_location": "lines 1-6",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_item_serialization",
+      "label": "Paper Byte-Based Item Serialization",
+      "file_type": "rationale",
+      "source_file": "src/main/java/org/maiminhdung/customenderchest/data/ItemSerializer.java",
+      "source_location": "lines 24-28",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_backup_system",
+      "label": "Auto + Shutdown Backup System",
+      "file_type": "rationale",
+      "source_file": "src/main/java/org/maiminhdung/customenderchest/backup/BackupManager.java",
+      "source_location": "lines 40-58",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_locale_system",
+      "label": "Multi-Locale Language System",
+      "file_type": "rationale",
+      "source_file": "src/main/java/org/maiminhdung/customenderchest/locale/LocaleManager.java",
+      "source_location": "lines 23-24",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_uuid_migration",
+      "label": "UUID-by-Name Migration",
+      "file_type": "rationale",
+      "source_file": "src/main/resources/config.yml",
+      "source_location": "lines 79-83",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    }
+  ],
+  "edges": [
+    {
+      "source": "aicontext_architecture_doc",
+      "target": "concept_permission_system",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "AI_CONTEXT.md",
+      "source_location": "lines 8-9",
+      "weight": 1.0
+    },
+    {
+      "source": "aicontext_architecture_doc",
+      "target": "concept_async_persistence",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "AI_CONTEXT.md",
+      "source_location": "lines 46-53",
+      "weight": 1.0
+    },
+    {
+      "source": "aicontext_architecture_doc",
+      "target": "concept_storage_migration",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "AI_CONTEXT.md",
+      "source_location": "lines 106-113",
+      "weight": 1.0
+    },
+    {
+      "source": "aicontext_architecture_doc",
+      "target": "concept_overflow_items",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "AI_CONTEXT.md",
+      "source_location": "lines 92-96",
+      "weight": 1.0
+    },
+    {
+      "source": "aicontext_architecture_doc",
+      "target": "concept_admin_view",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "AI_CONTEXT.md",
+      "source_location": "lines 83-90",
+      "weight": 1.0
+    },
+    {
+      "source": "readme_project_overview",
+      "target": "concept_folia_compatibility",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": "line 20",
+      "weight": 1.0
+    },
+    {
+      "source": "readme_project_overview",
+      "target": "concept_async_persistence",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": "line 21",
+      "weight": 1.0
+    },
+    {
+      "source": "readme_project_overview",
+      "target": "concept_hikaricp_pooling",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md",
+      "source_location": "line 28",
+      "weight": 1.0
+    },
+    {
+      "source": "plugin_yml_metadata",
+      "target": "concept_permission_system",
+      "relation": "defines",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/main/resources/plugin.yml",
+      "source_location": "lines 16-52",
+      "weight": 1.0
+    },
+    {
+      "source": "config_yml_settings",
+      "target": "concept_backup_system",
+      "relation": "configures",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/main/resources/config.yml",
+      "source_location": "lines 24-36",
+      "weight": 1.0
+    },
+    {
+      "source": "config_yml_settings",
+      "target": "concept_hikaricp_pooling",
+      "relation": "configures",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/main/resources/config.yml",
+      "source_location": "lines 64-70",
+      "weight": 1.0
+    },
+    {
+      "source": "config_yml_settings",
+      "target": "concept_locale_system",
+      "relation": "configures",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/main/resources/config.yml",
+      "source_location": "lines 9-12",
+      "weight": 1.0
+    },
+    {
+      "source": "config_yml_settings",
+      "target": "concept_uuid_migration",
+      "relation": "configures",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/main/resources/config.yml",
+      "source_location": "lines 79-83",
+      "weight": 1.0
+    },
+    {
+      "source": "concept_async_persistence",
+      "target": "concept_data_locking",
+      "relation": "requires",
+      "confidence": "INFERRED",
+      "confidence_score": 0.9,
+      "source_file": "AI_CONTEXT.md",
+      "source_location": "lines 46-53",
+      "weight": 1.0
+    },
+    {
+      "source": "concept_async_persistence",
+      "target": "concept_hikaricp_pooling",
+      "relation": "uses",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/main/java/org/maiminhdung/customenderchest/storage/StorageManager.java",
+      "source_location": "lines 1-6",
+      "weight": 1.0
+    },
+    {
+      "source": "concept_storage_migration",
+      "target": "concept_async_persistence",
+      "relation": "builds_on",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "AI_CONTEXT.md",
+      "source_location": "lines 106-113",
+      "weight": 1.0
+    },
+    {
+      "source": "concept_storage_migration",
+      "target": "concept_data_locking",
+      "relation": "requires",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "AI_CONTEXT.md",
+      "source_location": "line 111",
+      "weight": 1.0
+    },
+    {
+      "source": "concept_overflow_items",
+      "target": "concept_permission_system",
+      "relation": "triggered_by",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "AI_CONTEXT.md",
+      "source_location": "lines 92-96",
+      "weight": 1.0
+    },
+    {
+      "source": "concept_admin_view",
+      "target": "concept_data_locking",
+      "relation": "requires",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "AI_CONTEXT.md",
+      "source_location": "line 90",
+      "weight": 1.0
+    },
+    {
+      "source": "concept_guava_cache",
+      "target": "concept_data_locking",
+      "relation": "coordinates_with",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "src/main/java/org/maiminhdung/customenderchest/data/EnderChestManager.java",
+      "source_location": "lines 31-53",
+      "weight": 1.0
+    },
+    {
+      "source": "concept_item_serialization",
+      "target": "concept_async_persistence",
+      "relation": "supports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/main/java/org/maiminhdung/customenderchest/data/ItemSerializer.java",
+      "source_location": "lines 24-28",
+      "weight": 1.0
+    },
+    {
+      "source": "concept_minimessage_text",
+      "target": "concept_locale_system",
+      "relation": "renders",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/main/java/org/maiminhdung/customenderchest/utils/Text.java",
+      "source_location": "lines 13-21",
+      "weight": 1.0
+    },
+    {
+      "source": "concept_backup_system",
+      "target": "concept_async_persistence",
+      "relation": "protects",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "src/main/java/org/maiminhdung/customenderchest/backup/BackupManager.java",
+      "source_location": "lines 40-58",
+      "weight": 1.0
+    },
+    {
+      "source": "concept_folia_compatibility",
+      "target": "concept_async_persistence",
+      "relation": "enables",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "src/main/java/org/maiminhdung/customenderchest/Scheduler.java",
+      "source_location": "lines 14-49",
+      "weight": 1.0
+    }
+  ],
+  "hyperedges": [
+    {
+      "id": "data_integrity_trio",
+      "label": "Data Integrity Protection Trio",
+      "nodes": [
+        "concept_data_locking",
+        "concept_async_persistence",
+        "concept_backup_system"
+      ],
+      "relation": "implement",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "AI_CONTEXT.md"
+    },
+    {
+      "id": "storage_layer_components",
+      "label": "Storage Layer Architecture",
+      "nodes": [
+        "concept_hikaricp_pooling",
+        "concept_item_serialization",
+        "concept_async_persistence"
+      ],
+      "relation": "form",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "AI_CONTEXT.md"
+    },
+    {
+      "id": "user_experience_layer",
+      "label": "User Experience Layer",
+      "nodes": [
+        "concept_minimessage_text",
+        "concept_locale_system",
+        "concept_permission_system"
+      ],
+      "relation": "form",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "README.md"
+    }
+  ],
+  "input_tokens": 0,
+  "output_tokens": 0
+}
