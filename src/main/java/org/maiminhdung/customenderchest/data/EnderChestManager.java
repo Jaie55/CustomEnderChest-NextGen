@@ -94,7 +94,7 @@ public class EnderChestManager {
             this.autoSaveTask = null;
         }
         // Start the inventory tracker task
-        this.inventoryTrackerTask = Scheduler.runTaskTimer(this::checkOpenInventories, 20L, 20L);
+        this.inventoryTrackerTask = Scheduler.runTaskTimer(this::checkOpenInventories, 100L, 100L);
     }
 
     // Load player data when they join the server.
@@ -156,11 +156,11 @@ public class EnderChestManager {
                     }
 
                     Scheduler.runEntityTask(player, () -> {
+                        boolean unlockDelegated = false;
                         try {
                             if (error != null) {
                                 plugin.getLogger().log(Level.SEVERE, "Failed to load data for " + player.getName(),
                                         error);
-                                dataLockManager.unlock(player.getUniqueId());
                                 return;
                             }
 
@@ -177,8 +177,6 @@ public class EnderChestManager {
                                     liveData.put(player.getUniqueId(), inv);
                                     plugin.getDebugLogger().log("Created new empty enderchest for " + player.getName());
                                 }
-                                dataLockManager.unlock(player.getUniqueId());
-                                plugin.getDebugLogger().log("Data lock released for " + player.getName());
                                 return;
                             }
 
@@ -190,7 +188,9 @@ public class EnderChestManager {
                             if (items.length == 0) {
                                 //  Empty array means deserialization failed - DO NOT cache empty inventory!
                                 // Check if player actually had data in database
+                                unlockDelegated = true;
                                 plugin.getStorageManager().getStorage().loadEnderChestSize(player.getUniqueId())
+                                        .orTimeout(10, TimeUnit.SECONDS)
                                         .whenComplete((savedSize, sizeError) -> {
                                             try {
                                                 if (sizeError != null) {
@@ -284,8 +284,10 @@ public class EnderChestManager {
                                 plugin.getOverflowManager().sendLoginWarning(player);
                             }
                         } finally {
-                            dataLockManager.unlock(player.getUniqueId());
-                            plugin.getDebugLogger().log("Data lock released for " + player.getName());
+                            if (!unlockDelegated) {
+                                dataLockManager.unlock(player.getUniqueId());
+                                plugin.getDebugLogger().log("Data lock released for " + player.getName());
+                            }
                         }
                     });
                 });
@@ -536,9 +538,9 @@ public class EnderChestManager {
 
         // Save overflow items to storage if any exist
         if (!overflowItems.isEmpty()) {
-            // Load existing overflow items and merge them
-            plugin.getStorageManager().getStorage().loadOverflowItems(player.getUniqueId())
-                    .thenAccept(existingOverflow -> {
+            // Load existing overflow items and merge them, tracked to prevent race conditions
+            CompletableFuture<Void> overflowFuture = plugin.getStorageManager().getStorage().loadOverflowItems(player.getUniqueId())
+                    .thenCompose(existingOverflow -> {
                         List<ItemStack> mergedOverflow = new ArrayList<>(overflowItems);
 
                         // Add existing overflow items to the list
@@ -554,7 +556,7 @@ public class EnderChestManager {
 
                         // Save merged overflow items
                         ItemStack[] mergedArray = mergedOverflow.toArray(new ItemStack[0]);
-                        plugin.getStorageManager().getStorage().saveOverflowItems(player.getUniqueId(), mergedArray)
+                        return plugin.getStorageManager().getStorage().saveOverflowItems(player.getUniqueId(), mergedArray)
                                 .thenRun(() -> {
                                     plugin.getDebugLogger().log("Saved " + mergedOverflow.size()
                                             + " total overflow items for " + player.getName());
@@ -572,6 +574,7 @@ public class EnderChestManager {
                                     }
                                 });
                     });
+            trackPendingSave(player.getUniqueId(), overflowFuture);
         }
         plugin.getDebugLogger().log("Resize complete. New inventory size: " + newInv.getSize() + ", Overflow items: "
                 + overflowItems.size());
@@ -992,18 +995,23 @@ public class EnderChestManager {
 
                 if (currentPermissionSize > cachedInv.getSize()) {
                     // This is an upgrade! Run upgrade restore process
-                    checkForUpgradeAndRestore(player).whenComplete((v, ex) -> {
-                        dataLockManager.unlock(uuid);
-                    }).thenRun(() -> {
+                    checkForUpgradeAndRestore(player).thenRun(() -> {
                         Scheduler.runEntityTask(player, () -> {
                             if (player.isOnline()) {
                                 Inventory newResized = getLoadedEnderChest(uuid);
-                                player.openInventory(newResized);
-                                openInventories.put(uuid, newResized);
-                                soundHandler.playSound(player, "open");
-                                player.setItemOnCursor(cursorItem);
+                                if (newResized != null) {
+                                    player.openInventory(newResized);
+                                    openInventories.put(uuid, newResized);
+                                    soundHandler.playSound(player, "open");
+                                    player.setItemOnCursor(cursorItem);
+                                }
                             }
                         });
+                    }).whenComplete((v, ex) -> {
+                        dataLockManager.unlock(uuid);
+                        if (ex != null) {
+                            plugin.getLogger().warning("Error during upgrade restore for " + player.getName() + ": " + ex.getMessage());
+                        }
                     });
                 } else {
                     // Just a title change or downgrade:
@@ -1338,6 +1346,26 @@ public class EnderChestManager {
                 }
             }
         }
+
+        // Save updated overflow to database immediately to prevent duplication on crash
+        List<ItemStack> cleanOverflow = new ArrayList<>();
+        for (ItemStack item : activeOverflowList) {
+            if (item != null && item.getType() != Material.AIR) {
+                cleanOverflow.add(item);
+            }
+        }
+        CompletableFuture<Void> overflowSaveFuture;
+        if (cleanOverflow.isEmpty()) {
+            overflowSaveFuture = plugin.getStorageManager().getStorage().clearOverflowItems(uuid);
+            notifiedOverflowPlayers.remove(uuid);
+        } else {
+            overflowSaveFuture = plugin.getStorageManager().getStorage().saveOverflowItems(uuid, cleanOverflow.toArray(new ItemStack[0]));
+        }
+        overflowSaveFuture.exceptionally(ex -> {
+            ERROR_TRACKER.trackError(ex);
+            return null;
+        });
+        trackPendingSave(uuid, overflowSaveFuture);
 
         player.sendMessage(plugin.getLocaleManager().getPrefixedComponent("command.overflow-claimed",
                 net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.unparsed("count", String.valueOf(originalAmount - newAmount))));

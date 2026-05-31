@@ -193,60 +193,54 @@ public class OverflowManager {
         // Don't warn again if already warned this session
         if (warnedThisSession.contains(player.getUniqueId())) return;
 
-        plugin.getStorageManager().getStorage().hasOverflowItems(player.getUniqueId())
-                .thenAccept(hasOverflow -> {
-                    if (!hasOverflow) return;
+        plugin.getStorageManager().getStorage().loadOverflowItems(player.getUniqueId())
+                .thenAccept(overflowItems -> {
+                    if (overflowItems == null || overflowItems.length == 0) return;
 
-                    // Get overflow count and expiration info
-                    plugin.getStorageManager().getStorage().loadOverflowItems(player.getUniqueId())
-                            .thenAccept(overflowItems -> {
-                                if (overflowItems == null || overflowItems.length == 0) return;
+                    int count = overflowItems.length;
 
-                                int count = overflowItems.length;
+                    if (expirationEnabled) {
+                        // Check how many days left
+                        getOverflowCreatedAt(player.getUniqueId()).thenAccept(createdAt -> {
+                            Scheduler.runEntityTask(player, () -> {
+                                if (!player.isOnline()) return;
 
-                                if (expirationEnabled) {
-                                    // Check how many days left
-                                    getOverflowCreatedAt(player.getUniqueId()).thenAccept(createdAt -> {
-                                        Scheduler.runEntityTask(player, () -> {
-                                            if (!player.isOnline()) return;
+                                LocaleManager locale = plugin.getLocaleManager();
+                                if (createdAt != null) {
+                                    long expirationMillis = (long) expirationDays * 24 * 60 * 60 * 1000L;
+                                    long now = System.currentTimeMillis();
+                                    long elapsed = now - createdAt;
+                                    long remaining = expirationMillis - elapsed;
+                                    int daysLeft = Math.max(1, (int) (remaining / (24 * 60 * 60 * 1000L)));
 
-                                            LocaleManager locale = plugin.getLocaleManager();
-                                            if (createdAt != null) {
-                                                long expirationMillis = (long) expirationDays * 24 * 60 * 60 * 1000L;
-                                                long now = System.currentTimeMillis();
-                                                long elapsed = now - createdAt;
-                                                long remaining = expirationMillis - elapsed;
-                                                int daysLeft = Math.max(1, (int) (remaining / (24 * 60 * 60 * 1000L)));
-
-                                                player.sendMessage(locale.getPrefixedComponent(
-                                                        "messages.overflow-login-warning-expiring",
-                                                        Placeholder.unparsed("count", String.valueOf(count)),
-                                                        Placeholder.unparsed("days", String.valueOf(daysLeft)),
-                                                        Placeholder.unparsed("command", "/cec open")));
-                                            } else {
-                                                // No timestamp, just generic warning
-                                                player.sendMessage(locale.getPrefixedComponent(
-                                                        "messages.overflow-login-warning",
-                                                        Placeholder.unparsed("count", String.valueOf(count)),
-                                                        Placeholder.unparsed("command", "/cec open")));
-                                            }
-                                            warnedThisSession.add(player.getUniqueId());
-                                        });
-                                    });
+                                    player.sendMessage(locale.getPrefixedComponent(
+                                            "messages.overflow-login-warning-expiring",
+                                            Placeholder.unparsed("count", String.valueOf(count)),
+                                            Placeholder.unparsed("days", String.valueOf(daysLeft)),
+                                            Placeholder.unparsed("command", "/cec open")));
                                 } else {
-                                    // No expiration, just generic warning
-                                    Scheduler.runEntityTask(player, () -> {
-                                        if (!player.isOnline()) return;
-
-                                        LocaleManager locale = plugin.getLocaleManager();
-                                        player.sendMessage(locale.getPrefixedComponent(
-                                                "messages.overflow-login-warning",
-                                                Placeholder.unparsed("count", String.valueOf(count)),
-                                                Placeholder.unparsed("command", "/cec open")));
-                                        warnedThisSession.add(player.getUniqueId());
-                                    });
+                                    // No timestamp, just generic warning
+                                    player.sendMessage(locale.getPrefixedComponent(
+                                            "messages.overflow-login-warning",
+                                            Placeholder.unparsed("count", String.valueOf(count)),
+                                            Placeholder.unparsed("command", "/cec open")));
                                 }
+                                warnedThisSession.add(player.getUniqueId());
                             });
+                        });
+                    } else {
+                        // No expiration, just generic warning
+                        Scheduler.runEntityTask(player, () -> {
+                            if (!player.isOnline()) return;
+
+                            LocaleManager locale = plugin.getLocaleManager();
+                            player.sendMessage(locale.getPrefixedComponent(
+                                    "messages.overflow-login-warning",
+                                    Placeholder.unparsed("count", String.valueOf(count)),
+                                    Placeholder.unparsed("command", "/cec open")));
+                            warnedThisSession.add(player.getUniqueId());
+                        });
+                    }
                 });
     }
 

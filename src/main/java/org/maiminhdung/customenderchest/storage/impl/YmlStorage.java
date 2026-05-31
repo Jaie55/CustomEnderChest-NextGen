@@ -61,15 +61,18 @@ public class YmlStorage implements StorageInterface {
     public CompletableFuture<Void> saveEnderChest(UUID playerUUID, String playerName, int size, ItemStack[] items) {
         return CompletableFuture.runAsync(() -> {
             File playerFile = getPlayerFile(playerUUID);
-            YamlConfiguration config = new YamlConfiguration();
-            config.set("player-name", playerName);
-            config.set("enderchest-size", size);
-            config.set("enderchest-inventory", ItemSerializer.serialize(items));
-            try {
-                config.save(playerFile);
-            } catch (Exception e) {
-                e.printStackTrace();
-                ERROR_TRACKER.trackError(e);
+            // Synchronize on interned player UUID string to prevent concurrent file writes
+            synchronized (playerUUID.toString().intern()) {
+                YamlConfiguration config = new YamlConfiguration();
+                config.set("player-name", playerName);
+                config.set("enderchest-size", size);
+                config.set("enderchest-inventory", ItemSerializer.serialize(items));
+                try {
+                    config.save(playerFile);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    ERROR_TRACKER.trackError(e);
+                }
             }
         }, ioExecutor);
     }
@@ -151,15 +154,21 @@ public class YmlStorage implements StorageInterface {
     public CompletableFuture<Void> saveOverflowItems(UUID playerUUID, ItemStack[] items) {
         return CompletableFuture.runAsync(() -> {
             File playerFile = getPlayerFile(playerUUID);
-            YamlConfiguration config = YamlConfiguration.loadConfiguration(playerFile);
-            config.set("overflow-items", ItemSerializer.serialize(items));
-            config.set("overflow-created-at", System.currentTimeMillis());
-            try {
-                config.save(playerFile);
-            } catch (Exception e) {
-                EnderChest.getInstance().getLogger().severe("Failed to save overflow items for " + playerUUID);
-                e.printStackTrace();
-                ERROR_TRACKER.trackError(e);
+            // Synchronize on interned player UUID string to prevent concurrent file writes
+            synchronized (playerUUID.toString().intern()) {
+                YamlConfiguration config = YamlConfiguration.loadConfiguration(playerFile);
+                config.set("overflow-items", ItemSerializer.serialize(items));
+                // Only set created_at on initial creation, not updates
+                if (!config.contains("overflow-created-at")) {
+                    config.set("overflow-created-at", System.currentTimeMillis());
+                }
+                try {
+                    config.save(playerFile);
+                } catch (Exception e) {
+                    EnderChest.getInstance().getLogger().severe("Failed to save overflow items for " + playerUUID);
+                    e.printStackTrace();
+                    ERROR_TRACKER.trackError(e);
+                }
             }
         }, ioExecutor);
     }

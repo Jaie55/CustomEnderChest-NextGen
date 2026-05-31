@@ -248,8 +248,6 @@ public class PlayerListener implements Listener {
 
         LocaleManager localeManager = plugin.getLocaleManager();
 
-        manager.getOpenInventories().remove(player.getUniqueId());
-
         // Handle overflow inventory close
         if (manager.getOverflowInventories().containsKey(closedInventory)) {
             manager.handleOverflowClose(player, closedInventory);

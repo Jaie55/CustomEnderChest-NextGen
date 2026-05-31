@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 /**
@@ -34,14 +35,12 @@ import java.util.stream.Collectors;
 public final class EnderChestCommand implements CommandExecutor, TabCompleter {
 
     private final EnderChest plugin;
-    private final StorageInterface storage;
     private final EnderChestManager manager;
     private final MigrationManager migrationManager;
     private final BulkImporter bulkImporter;
 
     public EnderChestCommand(EnderChest plugin) {
         this.plugin = plugin;
-        this.storage = plugin.getStorageManager().getStorage();
         this.manager = plugin.getEnderChestManager();
         this.migrationManager = new MigrationManager(plugin);
         this.bulkImporter = new BulkImporter(plugin);
@@ -84,7 +83,7 @@ public final class EnderChestCommand implements CommandExecutor, TabCompleter {
                 handleReload(sender);
                 break;
             case "import":
-                handleImport(sender, args);
+                handleImport(sender, args, label);
                 break;
             case "delete":
                 handleDelete(sender, args, label);
@@ -93,7 +92,7 @@ public final class EnderChestCommand implements CommandExecutor, TabCompleter {
                 handleStats(sender, args);
                 break;
             case "migrate":
-                handleMigrate(sender, args);
+                handleMigrate(sender, args, label);
                 break;
             case "overflow":
                 handleOverflow(sender, args);
@@ -220,6 +219,7 @@ public final class EnderChestCommand implements CommandExecutor, TabCompleter {
                         return;
                     }
 
+                    StorageInterface storage = plugin.getStorageManager().getStorage();
                     storage.loadEnderChest(target.getUniqueId()).thenCombine(storage.loadEnderChestSize(target.getUniqueId()), (items, size) -> {
                         if (items == null || size == 0) {
                             admin.sendMessage(plugin.getLocaleManager().getPrefixedComponent("command.player-not-found", Placeholder.unparsed("player", targetName)));
@@ -262,14 +262,15 @@ public final class EnderChestCommand implements CommandExecutor, TabCompleter {
      * Handle /cec import vanilla command
      * Bulk imports vanilla enderchest data for all players (online + offline)
      */
-    private void handleImport(CommandSender sender, String[] args) {
+    private void handleImport(CommandSender sender, String[] args, String label) {
         if (!hasSenderPermission(sender, "CustomEnderChest.admin")) {
             sender.sendMessage(plugin.getLocaleManager().getPrefixedComponent("messages.no-permission"));
             return;
         }
 
         if (args.length < 2) {
-            sender.sendMessage(plugin.getLocaleManager().getPrefixedComponent("command.import-usage"));
+            sender.sendMessage(plugin.getLocaleManager().getPrefixedComponent("command.import-usage",
+                    Placeholder.unparsed("label", label)));
             return;
         }
 
@@ -316,46 +317,52 @@ public final class EnderChestCommand implements CommandExecutor, TabCompleter {
                         return;
                     }
 
-
-                    int size;
+                    // Get size without blocking
+                    CompletableFuture<Integer> sizeFuture;
                     if (target.isOnline()) {
-                        size = EnderChestUtils.getSize(Objects.requireNonNull(target.getPlayer()));
+                        sizeFuture = CompletableFuture.completedFuture(EnderChestUtils.getSize(Objects.requireNonNull(target.getPlayer())));
                     } else {
-                        size = storage.loadEnderChestSize(targetUUID).join();
+                        sizeFuture = plugin.getStorageManager().getStorage().loadEnderChestSize(targetUUID);
                     }
 
-                    if (size == 0) {
+                    sizeFuture.thenAccept(size -> {
+                        if (size == 0) {
+                            dataLockManager.unlock(targetUUID);
+                            sender.sendMessage(plugin.getLocaleManager().getPrefixedComponent("command.delete-success",
+                                    Placeholder.unparsed("player", finalName)));
+                            return;
+                        }
+
+                        ItemStack[] emptyItems = new ItemStack[size];
+
+                        manager.saveEnderChest(targetUUID, finalName, size, emptyItems)
+                                .whenComplete((result, ex) -> {
+                                    if (target.isOnline()) {
+                                        Scheduler.runEntityTask(target.getPlayer(), () -> {
+                                            manager.reloadCacheFor(target.getPlayer());
+                                            Objects.requireNonNull(target.getPlayer()).closeInventory();
+                                        });
+                                    }
+
+                                    dataLockManager.unlock(targetUUID);
+
+                                    if (ex != null) {
+                                        plugin.getLogger().warning("Failed to delete enderchest data for " + finalName + ": "
+                                                + ex.getMessage());
+                                        sender.sendMessage(plugin.getLocaleManager().getPrefixedComponent("messages.save-error"));
+                                        return;
+                                    }
+
+                                    sender.sendMessage(plugin.getLocaleManager().getPrefixedComponent(
+                                            "command.delete-success",
+                                            Placeholder.unparsed("player", finalName)));
+                                });
+                    }).exceptionally(ex -> {
                         dataLockManager.unlock(targetUUID);
-                        sender.sendMessage(plugin.getLocaleManager().getPrefixedComponent("command.delete-success",
-                                Placeholder.unparsed("player", finalName)));
-                        return;
-                    }
-
-                    ItemStack[] emptyItems = new ItemStack[size];
-
-                    manager.saveEnderChest(targetUUID, finalName, size, emptyItems)
-                            .whenComplete((result, ex) -> {
-                                if (target.isOnline()) {
-                                    Scheduler.runEntityTask(target.getPlayer(), () -> {
-                                        manager.reloadCacheFor(target.getPlayer());
-                                        Objects.requireNonNull(target.getPlayer()).closeInventory();
-                                    });
-                                }
-
-                                dataLockManager.unlock(targetUUID);
-
-                                if (ex != null) {
-                                    plugin.getLogger().warning("Failed to delete enderchest data for " + finalName + ": "
-                                            + ex.getMessage());
-                                    sender.sendMessage(plugin.getLocaleManager().getPrefixedComponent("messages.save-error"));
-                                    return;
-                                }
-
-                                sender.sendMessage(plugin.getLocaleManager().getPrefixedComponent(
-                                        "command.delete-success",
-                                        Placeholder.unparsed("player", finalName)));
-                            });
-
+                        plugin.getLogger().warning("Failed to load chest size for " + finalName + ": " + ex.getMessage());
+                        sender.sendMessage(plugin.getLocaleManager().getPrefixedComponent("messages.save-error"));
+                        return null;
+                    });
                 });
     }
 
@@ -380,7 +387,7 @@ public final class EnderChestCommand implements CommandExecutor, TabCompleter {
         if (args.length >= 2 && args[1].equalsIgnoreCase("validate")) {
             sender.sendMessage("§e[CustomEnderChest] Validating stored data...");
 
-            storage.getPlayersWithItems()
+            plugin.getStorageManager().getStorage().getPlayersWithItems()
                     .thenAccept(players -> Scheduler.runTask(() -> {
                         long corruptedCount = players.stream().filter(info -> info.isCorrupted).count();
                         long overflowCount = players.stream().filter(info -> info.hasOverflow).count();
@@ -424,7 +431,7 @@ public final class EnderChestCommand implements CommandExecutor, TabCompleter {
 
         sender.sendMessage("§e[CustomEnderChest] Collecting storage statistics...");
 
-        storage.getStorageStats()
+        plugin.getStorageManager().getStorage().getStorageStats()
                 .thenAccept(stats -> Scheduler.runTask(() -> {
                     String storageType = plugin.config().getString("storage.type", "yml").toUpperCase();
                     sender.sendMessage("§e[CustomEnderChest] ==================== Stats =====================");
@@ -448,15 +455,17 @@ public final class EnderChestCommand implements CommandExecutor, TabCompleter {
     /**
      * Handle /cec migrate command
      */
-    private void handleMigrate(CommandSender sender, String[] args) {
+    private void handleMigrate(CommandSender sender, String[] args, String label) {
         if (!hasSenderPermission(sender, "CustomEnderChest.admin")) {
             sender.sendMessage(plugin.getLocaleManager().getPrefixedComponent("messages.no-permission"));
             return;
         }
 
         if (args.length < 3) {
-            sender.sendMessage(plugin.getLocaleManager().getPrefixedComponent("command.migrate-usage"));
-            sender.sendMessage(plugin.getLocaleManager().getPrefixedComponent("command.migrate-example"));
+            sender.sendMessage(plugin.getLocaleManager().getPrefixedComponent("command.migrate-usage",
+                    Placeholder.unparsed("label", label)));
+            sender.sendMessage(plugin.getLocaleManager().getPrefixedComponent("command.migrate-example",
+                    Placeholder.unparsed("label", label)));
             return;
         }
 

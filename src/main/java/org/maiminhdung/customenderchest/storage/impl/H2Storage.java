@@ -259,16 +259,30 @@ public class H2Storage implements StorageInterface {
     @Override
     public CompletableFuture<Void> saveOverflowItems(UUID playerUUID, ItemStack[] items) {
         return CompletableFuture.runAsync(() -> {
-            String sql = "MERGE INTO " + tableName + "_overflow (player_uuid, overflow_data, created_at) " +
-                    "KEY(player_uuid) VALUES(?, ?, ?)";
-            try (Connection conn = storageManager.getConnection();
-                    PreparedStatement ps = conn.prepareStatement(sql)) {
-                ps.setQueryTimeout(10);
+            try (Connection conn = storageManager.getConnection()) {
                 String data = ItemSerializer.toBase64(items);
-                ps.setString(1, playerUUID.toString());
-                ps.setString(2, data);
-                ps.setLong(3, System.currentTimeMillis());
-                ps.executeUpdate();
+
+                // Try UPDATE first to preserve original created_at timestamp
+                String updateSql = "UPDATE " + tableName + "_overflow SET overflow_data = ? WHERE player_uuid = ?";
+                int updated;
+                try (PreparedStatement ps = conn.prepareStatement(updateSql)) {
+                    ps.setQueryTimeout(10);
+                    ps.setString(1, data);
+                    ps.setString(2, playerUUID.toString());
+                    updated = ps.executeUpdate();
+                }
+
+                if (updated == 0) {
+                    // New entry — insert with current timestamp
+                    String insertSql = "INSERT INTO " + tableName + "_overflow (player_uuid, overflow_data, created_at) VALUES(?, ?, ?)";
+                    try (PreparedStatement ps = conn.prepareStatement(insertSql)) {
+                        ps.setQueryTimeout(10);
+                        ps.setString(1, playerUUID.toString());
+                        ps.setString(2, data);
+                        ps.setLong(3, System.currentTimeMillis());
+                        ps.executeUpdate();
+                    }
+                }
             } catch (Exception e) {
                 EnderChest.getInstance().getLogger().severe("Failed to save overflow items for " + playerUUID);
                 ERROR_TRACKER.trackError(e);
