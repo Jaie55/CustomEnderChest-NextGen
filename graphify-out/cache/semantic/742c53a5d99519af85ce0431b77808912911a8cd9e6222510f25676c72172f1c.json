@@ -1,1 +1,0 @@
-{"nodes": [{"id": "concept_data_locking", "label": "Per-Player Data Locking", "file_type": "rationale", "source_file": "src/main/java/org/maiminhdung/customenderchest/utils/DataLockManager.java", "source_location": "lines 9-17", "source_url": null, "captured_at": null, "author": null, "contributor": null}], "edges": [], "hyperedges": []}

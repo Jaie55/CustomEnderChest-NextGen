@@ -2,6 +2,6 @@
 .idea
 .agents
 .idea
-.vscode
+/.vscode/
 .settings
 /graphify-out/
