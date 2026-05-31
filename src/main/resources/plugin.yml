@@ -1,15 +1,16 @@
 name: CustomEnderChest
 main: org.maiminhdung.customenderchest.EnderChest
-version: 2.1.1
+version: 2.1.2
 author: maiminhdung, brunyman
 website: https://maiminhdung.dev/
 load: STARTUP
 api-version: 1.21
 folia-supported: true
+softdepend: [NBTAPI, Vault]
 commands:
   customenderchest:
     description: Main command for CustomEnderChest.
-    usage: "/<command> [open|reload|import|delete|convertall|stats]"
+    usage: "/<command> [open|reload|import vanilla|delete|migrate|stats]"
     aliases: [ cec, ec, customec ]
 permissions:
   CustomEnderChest.level.0:
@@ -48,3 +49,9 @@ permissions:
   CustomEnderChest.block.open:
     description: Allows opening your enderchest by right-clicking an Ender Chest block.
     default: false
+  CustomEnderChest.command.overflow:
+    description: Allows viewing and claiming your overflow items via /cec overflow.
+    default: op
+  CustomEnderChest.command.overflow.other:
+    description: Allows viewing another player's overflow items via /cec overflow <player>.
+    default: op

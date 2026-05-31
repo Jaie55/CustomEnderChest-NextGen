@@ -13,17 +13,20 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 
 public class H2Storage implements StorageInterface {
 
     private final StorageManager storageManager;
     private final String tableName;
+    private final ExecutorService ioExecutor;
 
     // Regex pattern for valid SQL table names (alphanumeric and underscores only)
     private static final java.util.regex.Pattern VALID_TABLE_NAME = java.util.regex.Pattern.compile("^[a-zA-Z0-9_]+$");
 
     public H2Storage(StorageManager storageManager) {
         this.storageManager = storageManager;
+        this.ioExecutor = storageManager.getIoExecutor();
         String configTableName = EnderChest.getInstance().config().getString("storage.table_name", "custom_enderchests");
         
         // Validate table name to prevent SQL injection
@@ -129,7 +132,7 @@ public class H2Storage implements StorageInterface {
                 throw new java.util.concurrent.CompletionException(e);
             }
             return null;
-        });
+        }, ioExecutor);
     }
 
     /**
@@ -146,7 +149,7 @@ public class H2Storage implements StorageInterface {
             } catch (Exception e) {
                 EnderChest.getInstance().getLogger().warning("Failed to auto-save migrated data: " + e.getMessage());
             }
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -168,7 +171,7 @@ public class H2Storage implements StorageInterface {
                 throw new java.util.concurrent.CompletionException(e);
             }
             return 0;
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -194,7 +197,7 @@ public class H2Storage implements StorageInterface {
                 ERROR_TRACKER.trackError(e);
                 throw new RuntimeException("Failed to save enderchest data", e);
             }
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -208,7 +211,7 @@ public class H2Storage implements StorageInterface {
             } catch (Exception e) {
                 e.printStackTrace();
             }
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -228,14 +231,14 @@ public class H2Storage implements StorageInterface {
                 e.printStackTrace();
             }
             return null;
-        });
+        }, ioExecutor);
     }
 
     @Override
     public CompletableFuture<UUID> findUUIDByName(String playerName) {
         return CompletableFuture.supplyAsync(() -> {
-            // Case-insensitive search for player name
-            String sql = "SELECT player_uuid FROM " + tableName + " WHERE LOWER(player_name) = LOWER(?)";
+            // Case-insensitive search for player name, ordered by most recently seen to avoid old/duplicate data
+            String sql = "SELECT player_uuid FROM " + tableName + " WHERE LOWER(player_name) = LOWER(?) ORDER BY last_seen DESC LIMIT 1";
             try (Connection conn = storageManager.getConnection();
                     PreparedStatement ps = conn.prepareStatement(sql)) {
                 ps.setQueryTimeout(10);
@@ -250,28 +253,42 @@ public class H2Storage implements StorageInterface {
                         "[H2Storage] Failed to find UUID by name for " + playerName + ": " + e.getMessage());
             }
             return null;
-        });
+        }, ioExecutor);
     }
 
     @Override
     public CompletableFuture<Void> saveOverflowItems(UUID playerUUID, ItemStack[] items) {
         return CompletableFuture.runAsync(() -> {
-            String sql = "MERGE INTO " + tableName + "_overflow (player_uuid, overflow_data, created_at) " +
-                    "KEY(player_uuid) VALUES(?, ?, ?)";
-            try (Connection conn = storageManager.getConnection();
-                    PreparedStatement ps = conn.prepareStatement(sql)) {
-                ps.setQueryTimeout(10);
+            try (Connection conn = storageManager.getConnection()) {
                 String data = ItemSerializer.toBase64(items);
-                ps.setString(1, playerUUID.toString());
-                ps.setString(2, data);
-                ps.setLong(3, System.currentTimeMillis());
-                ps.executeUpdate();
+
+                // Try UPDATE first to preserve original created_at timestamp
+                String updateSql = "UPDATE " + tableName + "_overflow SET overflow_data = ? WHERE player_uuid = ?";
+                int updated;
+                try (PreparedStatement ps = conn.prepareStatement(updateSql)) {
+                    ps.setQueryTimeout(10);
+                    ps.setString(1, data);
+                    ps.setString(2, playerUUID.toString());
+                    updated = ps.executeUpdate();
+                }
+
+                if (updated == 0) {
+                    // New entry — insert with current timestamp
+                    String insertSql = "INSERT INTO " + tableName + "_overflow (player_uuid, overflow_data, created_at) VALUES(?, ?, ?)";
+                    try (PreparedStatement ps = conn.prepareStatement(insertSql)) {
+                        ps.setQueryTimeout(10);
+                        ps.setString(1, playerUUID.toString());
+                        ps.setString(2, data);
+                        ps.setLong(3, System.currentTimeMillis());
+                        ps.executeUpdate();
+                    }
+                }
             } catch (Exception e) {
                 EnderChest.getInstance().getLogger().severe("Failed to save overflow items for " + playerUUID);
                 ERROR_TRACKER.trackError(e);
                 throw new RuntimeException("Failed to save overflow items", e);
             }
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -298,7 +315,7 @@ public class H2Storage implements StorageInterface {
                 throw new java.util.concurrent.CompletionException(e);
             }
             return null;
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -313,7 +330,7 @@ public class H2Storage implements StorageInterface {
             } catch (Exception e) {
                 e.printStackTrace();
             }
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -333,7 +350,28 @@ public class H2Storage implements StorageInterface {
                 e.printStackTrace();
             }
             return false;
-        });
+        }, ioExecutor);
+    }
+
+    @Override
+    public CompletableFuture<Long> getOverflowCreatedAt(UUID playerUUID) {
+        return CompletableFuture.supplyAsync(() -> {
+            String sql = "SELECT created_at FROM " + tableName + "_overflow WHERE player_uuid = ?";
+            try (Connection conn = storageManager.getConnection();
+                    PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setQueryTimeout(10);
+                ps.setString(1, playerUUID.toString());
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        return rs.getLong("created_at");
+                    }
+                }
+            } catch (Exception e) {
+                EnderChest.getInstance().getLogger().warning(
+                        "[H2Storage] Failed to get overflow created_at for " + playerUUID + ": " + e.getMessage());
+            }
+            return null;
+        }, ioExecutor);
     }
 
     @Override
@@ -352,7 +390,7 @@ public class H2Storage implements StorageInterface {
                         "[H2Storage] Failed to check data existence for " + playerUUID + ": " + e.getMessage());
             }
             return false;
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -458,7 +496,7 @@ public class H2Storage implements StorageInterface {
 
             return new StorageStats(totalPlayers, playersWithItems, totalItems,
                     totalOverflowPlayers, totalOverflowItems, totalDataSize);
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -521,6 +559,6 @@ public class H2Storage implements StorageInterface {
             }
 
             return result;
-        });
+        }, ioExecutor);
     }
 }

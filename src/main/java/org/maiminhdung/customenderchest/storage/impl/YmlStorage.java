@@ -5,6 +5,7 @@ import static org.maiminhdung.customenderchest.EnderChest.ERROR_TRACKER;
 import org.maiminhdung.customenderchest.EnderChest;
 import org.maiminhdung.customenderchest.data.ItemSerializer;
 import org.maiminhdung.customenderchest.storage.StorageInterface;
+import org.maiminhdung.customenderchest.storage.StorageManager;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.inventory.ItemStack;
 
@@ -13,12 +14,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 
 public class YmlStorage implements StorageInterface {
 
     private final File dataFolder;
+    private final ExecutorService ioExecutor;
 
-    public YmlStorage(EnderChest plugin) {
+    public YmlStorage(StorageManager storageManager) {
+        EnderChest plugin = storageManager.getPlugin();
+        this.ioExecutor = storageManager.getIoExecutor();
         this.dataFolder = new File(plugin.getDataFolder(), "playerdata");
         if (!dataFolder.exists()) {
             dataFolder.mkdirs();
@@ -49,27 +54,28 @@ public class YmlStorage implements StorageInterface {
             List<Map<String, Object>> serializedItems = (List<Map<String, Object>>) config.getList("enderchest-inventory");
 
             return ItemSerializer.deserialize(serializedItems);
-        });
+        }, ioExecutor);
     }
 
     @Override
     public CompletableFuture<Void> saveEnderChest(UUID playerUUID, String playerName, int size, ItemStack[] items) {
         return CompletableFuture.runAsync(() -> {
             File playerFile = getPlayerFile(playerUUID);
-            YamlConfiguration config = new YamlConfiguration();
-            config.set("player-name", playerName);
-            config.set("enderchest-size", size);
-            config.set("enderchest-inventory", ItemSerializer.serialize(items));
-            try {
-                config.save(playerFile);
-            } catch (Exception e) {
-                e.printStackTrace();
-                ERROR_TRACKER.trackError(e);
+            // Synchronize on interned player UUID string to prevent concurrent file writes
+            synchronized (playerUUID.toString().intern()) {
+                YamlConfiguration config = new YamlConfiguration();
+                config.set("player-name", playerName);
+                config.set("enderchest-size", size);
+                config.set("enderchest-inventory", ItemSerializer.serialize(items));
+                try {
+                    config.save(playerFile);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    ERROR_TRACKER.trackError(e);
+                }
             }
-        });
+        }, ioExecutor);
     }
-
-    // --- Another method ---
 
     @Override
     public void init() {
@@ -88,7 +94,7 @@ public class YmlStorage implements StorageInterface {
                 throw new java.util.concurrent.CompletionException(e);
             }
             return config.getInt("enderchest-size", 0);
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -98,7 +104,7 @@ public class YmlStorage implements StorageInterface {
             if (playerFile.exists()) {
                 playerFile.delete();
             }
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -107,7 +113,7 @@ public class YmlStorage implements StorageInterface {
             File playerFile = getPlayerFile(playerUUID);
             if (!playerFile.exists()) return null;
             return YamlConfiguration.loadConfiguration(playerFile).getString("player-name");
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -116,39 +122,55 @@ public class YmlStorage implements StorageInterface {
             File[] files = dataFolder.listFiles((dir, name) -> name.endsWith(".yml"));
             if (files == null) return null;
 
+            File latestFile = null;
+            long latestTime = -1;
+
             for (File file : files) {
                 try {
                     YamlConfiguration config = YamlConfiguration.loadConfiguration(file);
                     String storedName = config.getString("player-name");
                     if (storedName != null && storedName.equalsIgnoreCase(playerName)) {
-                        // Extract UUID from filename (remove .yml extension)
-                        String filename = file.getName();
-                        String uuidStr = filename.substring(0, filename.length() - 4);
-                        return UUID.fromString(uuidStr);
+                        long modified = file.lastModified();
+                        if (modified > latestTime) {
+                            latestTime = modified;
+                            latestFile = file;
+                        }
                     }
                 } catch (Exception e) {
                     // Skip invalid files
                 }
             }
+
+            if (latestFile != null) {
+                String filename = latestFile.getName();
+                String uuidStr = filename.substring(0, filename.length() - 4);
+                return UUID.fromString(uuidStr);
+            }
             return null;
-        });
+        }, ioExecutor);
     }
 
     @Override
     public CompletableFuture<Void> saveOverflowItems(UUID playerUUID, ItemStack[] items) {
         return CompletableFuture.runAsync(() -> {
             File playerFile = getPlayerFile(playerUUID);
-            YamlConfiguration config = YamlConfiguration.loadConfiguration(playerFile);
-            config.set("overflow-items", ItemSerializer.serialize(items));
-            config.set("overflow-created-at", System.currentTimeMillis());
-            try {
-                config.save(playerFile);
-            } catch (Exception e) {
-                EnderChest.getInstance().getLogger().severe("Failed to save overflow items for " + playerUUID);
-                e.printStackTrace();
-                ERROR_TRACKER.trackError(e);
+            // Synchronize on interned player UUID string to prevent concurrent file writes
+            synchronized (playerUUID.toString().intern()) {
+                YamlConfiguration config = YamlConfiguration.loadConfiguration(playerFile);
+                config.set("overflow-items", ItemSerializer.serialize(items));
+                // Only set created_at on initial creation, not updates
+                if (!config.contains("overflow-created-at")) {
+                    config.set("overflow-created-at", System.currentTimeMillis());
+                }
+                try {
+                    config.save(playerFile);
+                } catch (Exception e) {
+                    EnderChest.getInstance().getLogger().severe("Failed to save overflow items for " + playerUUID);
+                    e.printStackTrace();
+                    ERROR_TRACKER.trackError(e);
+                }
             }
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -169,7 +191,7 @@ public class YmlStorage implements StorageInterface {
 
             if (serializedItems == null) return null;
             return ItemSerializer.deserialize(serializedItems);
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -187,7 +209,7 @@ public class YmlStorage implements StorageInterface {
                 e.printStackTrace();
                 ERROR_TRACKER.trackError(e);
             }
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -198,7 +220,27 @@ public class YmlStorage implements StorageInterface {
 
             YamlConfiguration config = YamlConfiguration.loadConfiguration(playerFile);
             return config.contains("overflow-items");
-        });
+        }, ioExecutor);
+    }
+
+    @Override
+    public CompletableFuture<Long> getOverflowCreatedAt(UUID playerUUID) {
+        return CompletableFuture.supplyAsync(() -> {
+            File playerFile = getPlayerFile(playerUUID);
+            if (!playerFile.exists()) return null;
+
+            YamlConfiguration config = new YamlConfiguration();
+            try {
+                config.load(playerFile);
+            } catch (Exception e) {
+                return null;
+            }
+
+            if (config.contains("overflow-created-at")) {
+                return config.getLong("overflow-created-at");
+            }
+            return null;
+        }, ioExecutor);
     }
 
     @Override
@@ -206,7 +248,7 @@ public class YmlStorage implements StorageInterface {
         return CompletableFuture.supplyAsync(() -> {
             File playerFile = getPlayerFile(playerUUID);
             return playerFile.exists();
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -245,7 +287,7 @@ public class YmlStorage implements StorageInterface {
                                 }
                             }
                             if (hasAnyItem) {
-                                playersWithItems++;
+                                    playersWithItems++;
                             }
                         }
                     }
@@ -272,7 +314,7 @@ public class YmlStorage implements StorageInterface {
 
             return new StorageStats(totalPlayers, playersWithItems, totalItems,
                     totalOverflowPlayers, totalOverflowItems, totalDataSize);
-        });
+        }, ioExecutor);
     }
 
     @Override
@@ -327,6 +369,6 @@ public class YmlStorage implements StorageInterface {
             }
 
             return result;
-        });
+        }, ioExecutor);
     }
 }

@@ -13,6 +13,14 @@ public class SoundHandler {
     }
 
     public void playSound(Player player, String configPath) {
+        if (configPath.equals("open") || configPath.equals("close")) {
+            boolean openedViaBlock = plugin.getPlayerListener() != null && 
+                                     plugin.getPlayerListener().hasInteractedWithBlock(player.getUniqueId());
+            if (openedViaBlock && plugin.config().getBoolean("enderchest-options.play-block-animation", true)) {
+                return;
+            }
+        }
+
         if (plugin.config().getBoolean("sounds.disable-all")) return;
 
         String soundName = plugin.config().getString("sounds." + configPath + ".name");

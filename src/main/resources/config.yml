@@ -76,6 +76,34 @@ storage:
     # Number of inactive days. Data for players who have been offline for this duration will be deleted.
     inactive-days: 90
 
+  # Automatically migrate data by player name if their UUID changes (e.g. Crack -> Premium).
+  # WARNING: Enabling this can allow a cracked player to steal a premium player's items if they change their name.
+  # It is recommended to leave this false and contact server staff to transfer data manually if needed.
+  # Only enable this if your server move from offline server to online server or you know what you're doing.
+  migrate-uuid-by-name: false
+
+# Overflow settings
+overflow:
+  # Expiration timer for overflow items
+  # If enabled, overflow items that are not claimed will be automatically deleted
+  expiration:
+    enabled: false
+    # Number of days before overflow items expire (default: 30)
+    days: 30
+    # How often to check for expired items (in minutes, default: 60)
+    check-interval-minutes: 60
+  # Warning shown to players on login if they have overflow items
+  login-warning:
+    enabled: true
+  # Retrieval fees (requires Vault)
+  # Charge players when they claim overflow items
+  retrieval-fee:
+    enabled: false
+    # Flat fee charged once when claiming any overflow items (default: 0)
+    flat-fee: 0
+    # Fee charged per item in overflow (default: 0)
+    per-item-fee: 0
+
 # Ender Chest gameplay options
 enderchest-options:
   # Disable opening the custom ender chest by right-clicking an Ender Chest block.
@@ -88,6 +116,10 @@ enderchest-options:
   # Useful if you want to reserve the block for vanilla use only.
   # Note: If this option is true, don't set true for `disable-enderchest-click` above.
   vanilla-enderchest-block: false
+  # Play the physical lid open/close animation of the Ender Chest block.
+  # Note: Disabling this prevents the vanilla ender chest sound from playing,
+  # allowing you to hear ONLY the custom sound configured in the `sounds` section.
+  play-block-animation: true
 
 # Default settings for players
 default-player:
@@ -101,13 +133,6 @@ default-player:
   # Allow players to use /cec, /ec, /customec commands by default.
   # If false, players will need "CustomEnderChest.commands" permission to use commands.
   allow-command: true
-
-# Import settings for vanilla ender chest data
-import:
-  # Automatically import vanilla ender chest items when a player joins
-  # This will transfer items from their vanilla ender chest to the plugin's storage
-  # Items are merged with existing data (vanilla items go to empty slots)
-  auto-import-on-join: false
 
 # Sound customization
 sounds:

@@ -21,8 +21,14 @@ messages:
 
   # Overflow messages
   overflow-items-saved: "<yellow>⚠ Một số vật phẩm vượt quyền hạn đã được lưu vào kho dự phòng."
-  overflow-will-restore: "<gray>Chúng sẽ tự động được khôi phục khi bạn nâng cấp Rương Ender."
+  overflow-will-restore: "<gray>Chúng sẽ tự động được khôi phục khi bạn nâng cấp Rương Ender hoặc /ec overflow"
   overflow-items-restored: "<green>✓ Đã khôi phục <count> vật phẩm từ kho dự phòng!"
+  overflow-login-warning: "<yellow>⚠ Bạn có <count> vật phẩm trong kho dự phòng. Dùng <command> để nhận."
+  overflow-login-warning-expiring: "<yellow>⚠ Bạn có <count> vật phẩm trong kho dự phòng sẽ hết hạn sau <days> ngày! Dùng <command> để nhận."
+  overflow-expired: "<red>Vật phẩm dự phòng (<count> vật phẩm) đã hết hạn và bị xóa."
+  overflow-fee-charged: "<yellow>Đã trừ <amount> khi nhận <count> vật phẩm dự phòng."
+  overflow-fee-insufficient: "<red>Bạn cần ít nhất <amount> để nhận vật phẩm dự phòng. Số dư: <balance>"
+  overflow-fee-no-vault: "<red>Không tìm thấy plugin kinh tế (Vault). Phí nhận vật phẩm đã tắt."
 
 command:
   usage: "<red>Sử dụng: <gray>/<label> <usage>"
@@ -32,8 +38,8 @@ command:
   loading-chest: "<yellow>Đang tải Rương Ender của <white><player></white>..."
   import-usage: "<red>Sử dụng: <gray>/<label> import <vanilla>"
   import-invalid-type: "<red>Loại import không hợp lệ. Sử dụng: <gray>vanilla"
-  migrate-usage: "<yellow>Sử dụng: <gray>/cec migrate <yml|h2|mysql> <yml|h2|mysql>"
-  migrate-example: "<gray>Ví dụ: /cec migrate yml mysql"
+  migrate-usage: "<yellow>Sử dụng: <gray>/<label> migrate <yml|h2|mysql> <yml|h2|mysql>"
+  migrate-example: "<gray>Ví dụ: /<label> migrate yml mysql"
   migrate-running: "<red>Một tiến trình migrate khác đang diễn ra. Vui lòng đợi!"
   migrate-same-type: "<red>Định dạng nguồn và đích không được giống nhau."
   migrate-init: "<yellow>Đang khởi tạo kết nối database..."
@@ -45,6 +51,14 @@ command:
   migrate-note: "<yellow>⚠ Lưu ý: <white>Sau khi chuyển đổi dữ liệu và muốn sử dụng dữ liệu đó thì hãy tắt máy chủ và chỉnh thông tin trong file config.yml rồi mở máy chủ để sử dụng."
   migrate-error-unknown: "<red>Đã xảy ra lỗi không xác định lúc chuyển dữ liệu. Xem Console để biết chi tiết."
   migrate-in-progress: "<red>Hệ thống đang bảo trì dữ liệu (migrate), không thể mở rương ngay lúc này!"
+  overflow-title: "<dark_purple>Rương dự phòng của <player>"
+  overflow-admin-title: "<dark_red>Admin Xem: <white><player> <dark_red>Dự phòng"
+  overflow-empty: "<green>Bạn không có vật phẩm nào trong kho dự phòng."
+  overflow-admin-empty: "<green><player> không có vật phẩm trong kho dự phòng."
+  overflow-no-enderchest: "<red>Bạn cần Rương Ender để nhận vật phẩm dự phòng."
+  overflow-claimed: "<green>✓ Đã nhận <count> vật phẩm từ kho dự phòng!"
+  overflow-enderchest-full: "<yellow>Hành trang của bạn đã đầy. Vật phẩm còn lại vẫn ở kho dự phòng."
+  overflow-claim-failed: "<red>Nhận vật phẩm dự phòng thất bại. Vui lòng thử lại."
 
 titles:
   enderchest: "<level> - <light_purple>Rương của <player>"
@@ -62,6 +76,4 @@ levels:
 import:
   started: "<green>Bắt đầu chuyển dữ liệu vanilla sang plugin cho tất cả người chơi trực tuyến..."
   complete: "<green>Chuyển hoàn tất! Đã chuyển cho <white><imported></white> người chơi, bỏ qua <white><skipped></white>."
-  auto-import-started: "<yellow>Đang tự động chuyển vật phẩm từ rương ender vanilla của bạn..."
-  auto-import-complete: "<green>Tự động chuyển hoàn tất! Đã chuyển <white><count></white> vật phẩm từ rương ender vanilla."
-  auto-import-failed: "<red>Không thể tự động chuyển dữ liệu rương ender vanilla. Vui lòng liên hệ admin."
+  nbtapi-missing: "<red>Cần cài đặt plugin NBTAPI để sử dụng lệnh này. Vui lòng cài đặt NBTAPI trên server."

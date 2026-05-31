@@ -11,14 +11,15 @@ import org.maiminhdung.customenderchest.bstats.Metrics;
 import org.maiminhdung.customenderchest.bstats.Metrics.SimplePie;
 import org.maiminhdung.customenderchest.commands.EnderChestCommand;
 import org.maiminhdung.customenderchest.data.EnderChestManager;
-import org.maiminhdung.customenderchest.data.LegacyImporter;
 import org.maiminhdung.customenderchest.data.MetricsDataProvider;
+import org.maiminhdung.customenderchest.data.OverflowManager;
 import org.maiminhdung.customenderchest.listeners.PlayerListener;
 import org.maiminhdung.customenderchest.locale.LocaleManager;
 import org.maiminhdung.customenderchest.storage.StorageManager;
 import org.maiminhdung.customenderchest.utils.DataLockManager;
 import org.maiminhdung.customenderchest.utils.DebugLogger;
 import org.maiminhdung.customenderchest.utils.SoundHandler;
+import org.maiminhdung.customenderchest.utils.VaultHandler;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -47,11 +48,15 @@ public final class EnderChest extends JavaPlugin {
 	@Getter
 	private BackupManager backupManager;
 	@Getter
-	private LegacyImporter legacyImporter;
+	private PlayerListener playerListener;
 	@Getter
 	private MetricsDataProvider metricsDataProvider;
 	@Getter
 	private BukkitMetrics fastStatsMetrics;
+	@Getter
+	private VaultHandler vaultHandler;
+	@Getter
+	private OverflowManager overflowManager;
 
 	@Override
 	public void onEnable() {
@@ -70,8 +75,17 @@ public final class EnderChest extends JavaPlugin {
 		// Initialize the core logic manager
 		this.enderChestManager = new EnderChestManager(this);
 
-		// Initialize Legacy Importer for vanilla data import
-		this.legacyImporter = new LegacyImporter(this);
+		// Initialize Vault economy handler (soft dependency)
+		this.vaultHandler = new VaultHandler();
+		if (vaultHandler.setupEconomy()) {
+			this.getLogger().info("Vault economy hooked successfully.");
+		} else {
+			this.getLogger().info("Vault economy not found. Retrieval fees will be disabled.");
+		}
+
+		// Initialize Overflow Manager (expiration + fees)
+		this.overflowManager = new OverflowManager(this);
+		this.overflowManager.startExpirationTask();
 
 		// Initialize Backup Manager
 		this.backupManager = new BackupManager(this);
@@ -89,7 +103,8 @@ public final class EnderChest extends JavaPlugin {
 		reloadConfig();
 
 		// Register listeners and commands
-		this.getServer().getPluginManager().registerEvents(new PlayerListener(this), this);
+		this.playerListener = new PlayerListener(this);
+		this.getServer().getPluginManager().registerEvents(this.playerListener, this);
 		// Register commands and tab completer
 		EnderChestCommand commandExecutor = new EnderChestCommand(this);
 		PluginCommand command = this.getCommand("customenderchest");
@@ -152,6 +167,11 @@ public final class EnderChest extends JavaPlugin {
 		if (this.backupManager != null) {
 			this.backupManager.stopAutoBackup();
 			this.getLogger().info("Automatic backup task stopped.");
+		}
+
+		// Stop overflow expiration task
+		if (this.overflowManager != null) {
+			this.overflowManager.stopExpirationTask();
 		}
 
 		// Shutdown manager tasks and save all data
