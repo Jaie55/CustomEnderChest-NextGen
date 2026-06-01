@@ -35,7 +35,7 @@ command:
   delete-success: "<green>Se han eliminado con éxito los datos del cofre de Ender de <white><player></white>."
   loading-chest: "<yellow>Cargando el cofre de Ender de <white><player></white>..."
   import-usage: "<red>Uso: <gray>/<label> import <vanilla>"
-  import-invalid-type: "<red>Tipo de importación no válida. Usa: <gray>vanilla"
+  import-invalid-type: "<red>Tipo de importación no válido. Usa: <gray>vanilla"
   migrate-usage: "<yellow>Uso: <gray>/<label> migrate <yml|h2|mysql> <yml|h2|mysql>"
   migrate-example: "<gray>Ejemplo: /<label> migrate yml mysql"
   migrate-running: "<red>Otro proceso de migración está en ejecución. ¡Por favor, espera!"
